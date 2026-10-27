@@ -5,6 +5,7 @@ import json
 
 PORT = 5006
 GROUP = '239.0.0.1'
+OUT_PATH = 'link3.json'
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -17,16 +18,19 @@ sock.setsockopt(
 )
 
 count = 0
-datum = {}
-while True:
-    data, addr = sock.recvfrom(4096)
+with open(OUT_PATH, 'a', encoding='utf-8') as out:
+    while True:
+        data, addr = sock.recvfrom(4096)
 
-    depths = np.frombuffer(data[1:], dtype=np.uint16)
-    datum[count]= {
-        "address"   :  addr[0],
-        "sensor"    :  data[0],
-        "len"       :  len(data),
-        "depth_mm"  :  depths.tolist(),
-    }
-    count += 1
-    json.dump(datum, "link3.json", indent=4)
+        depths = np.frombuffer(data[1:], dtype=np.uint16)
+        record = {
+            "step": count,
+            "address": addr[0],
+            "sensor": data[0],
+            "len": len(data),
+            "depth_mm": depths.tolist(),
+        }
+        json.dump(record, out)
+        out.write('\n')
+        out.flush()
+        count += 1
