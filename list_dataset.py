@@ -20,17 +20,8 @@ def load_steps(path):
 
 def main():
     steps = load_steps(PATH)
-    sensor_names = []
-    seen = set()
-    for step in steps:
-        for name in step.get("sensors", {}):
-            if name not in seen:
-                seen.add(name)
-                sensor_names.append(name)
-
     print(f"file: {PATH}")
     print(f"steps: {len(steps)}")
-    print(f"sensors: {', '.join(sensor_names) if sensor_names else '(none)'}")
 
     if not steps:
         return
@@ -40,14 +31,14 @@ def main():
         print(f"step {step.get('step')}")
         for name, reading in step.get("sensors", {}).items():
             depths = reading.get("depth_mm", [])
-            print(
-                f"  {name}: "
-                f"address={reading.get('address')} "
-                f"sensor={reading.get('sensor')} "
-                f"len={reading.get('len')} "
-                f"depth_count={len(depths)}"
-            )
-            print(f"    depth_mm: {depths}")
+            print(f"  {name}:")
+            print(f"    address: {reading.get('address')}")
+            print(f"    packet_len: {reading.get('len')}")
+            if not depths:
+                print("    sensors: (none)")
+                continue
+            for index, depth in enumerate(depths):
+                print(f"    sensor {index}: {depth} mm")
         print()
 
 
