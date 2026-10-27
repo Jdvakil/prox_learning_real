@@ -1,0 +1,3 @@
+[submodule "submodules/franky"]
+	path = submodules/franky
+	url = git@github.com:TimSchneider42/franky.git
