@@ -1,7 +1,7 @@
-
 import socket
 import struct
 import numpy as np
+import json
 
 PORT = 5006
 GROUP = '239.0.0.1'
@@ -16,13 +16,17 @@ sock.setsockopt(
     struct.pack('4sL', socket.inet_aton(GROUP), socket.INADDR_ANY)
 )
 
+count = 0
+datum = {}
 while True:
     data, addr = sock.recvfrom(4096)
-    depths = np.frombuffer(data[1:], dtype=np.uint16)
 
-    print(
-        f"{addr[0]} "
-        f"sensor={data[0]} "
-        f"len={len(data)} "
-        f"depth_mm={depths}"
-    )
+    depths = np.frombuffer(data[1:], dtype=np.uint16)
+    datum[count]= {
+        "address"   :  addr[0],
+        "sensor"    :  data[0],
+        "len"       :  len(data),
+        "depth_mm"  :  depths.tolist(),
+    }
+    count += 1
+    json.dump(datum, "link3.json", indent=4)
