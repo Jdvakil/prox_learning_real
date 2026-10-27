@@ -1,0 +1,435 @@
+<?xml version="1.0" ?>
+<!-- fr3 + skin URDF (as provided). Generated mesh paths use package://gentact_ros_tools/meshes/... -->
+<robot name="fr3">
+  <link name="base"/>
+  <joint name="fr3_base_joint" type="fixed">
+    <parent link="base"/>
+    <child link="fr3_link0"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="fr3_link0">
+    <visual name="fr3_link0_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link0.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link0_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link0.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0172 0.0004 0.0745"/>
+      <mass value="2.3966"/>
+      <inertia ixx="0.009" ixy="0.0" ixz="0.002" iyy="0.0115" iyz="0.0" izz="0.0085"/>
+    </inertial>
+  </link>
+  <link name="fr3_link1">
+    <visual name="fr3_link1_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link1.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link1_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link1.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0000004128 -0.0181251324 -0.0386035970"/>
+      <mass value="2.9274653454"/>
+      <inertia ixx="0.023927316485107913" ixy="1.3317903455714081e-05" ixz="-0.00011404774918616684" iyy="0.0224821613275756" iyz="-0.0019950320628240115" izz="0.006350098258530016"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint1" type="revolute">
+    <origin rpy="0 0 0" xyz="0 0 0.333"/>
+    <parent link="fr3_link0"/>
+    <child link="fr3_link1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87.0" lower="-2.7437" upper="2.7437" velocity="2.62"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+  <link name="fr3_link2">
+    <visual name="fr3_link2_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link2.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link2_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link2.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0031828864 -0.0743221644 0.0088146084"/>
+      <mass value="2.9355370338"/>
+      <inertia ixx="0.041938946257609425" ixy="0.00020257331521090626" ixz="0.004077784227179924" iyy="0.02514514885014724" iyz="-0.0042252158006570156" izz="0.06170214472888839"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint2" type="revolute">
+    <origin rpy="-1.570796326794897 0 0" xyz="0 0 0"/>
+    <parent link="fr3_link1"/>
+    <child link="fr3_link2"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87.0" lower="-1.7837" upper="1.7837" velocity="2.62"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+  <link name="link2_skin">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/skin/self-cap/link2_fancy.stl" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="link2_base_joint" type="fixed">
+    <origin rpy="1.5707 0 0" xyz="0 0 0"/>
+    <parent link="fr3_link2"/>
+    <child link="link2_skin"/>
+  </joint>
+  <joint name="link2_sensor_0_joint" type="fixed">
+    <origin rpy="1.670 -0.000 -2.166" xyz="-0.048 0.113 -0.006"/>
+    <axis xyz="-0.824 0.558 -0.099"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_0"/>
+  </joint>
+  <link name="link2_sensor_0"/>
+  <joint name="link2_sensor_1_joint" type="fixed">
+    <origin rpy="1.526 -0.000 2.508" xyz="0.032 0.053 0.147"/>
+    <axis xyz="0.592 0.805 0.044"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_1"/>
+  </joint>
+  <link name="link2_sensor_1"/>
+  <joint name="link2_sensor_2_joint" type="fixed">
+    <origin rpy="1.549 -0.000 -2.303" xyz="-0.046 0.040 0.162"/>
+    <axis xyz="-0.744 0.668 0.022"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_2"/>
+  </joint>
+  <link name="link2_sensor_2"/>
+  <joint name="link2_sensor_3_joint" type="fixed">
+    <origin rpy="1.513 -0.000 2.207" xyz="0.050 0.110 0.007"/>
+    <axis xyz="0.803 0.593 0.058"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_3"/>
+  </joint>
+  <link name="link2_sensor_3"/>
+  <joint name="link2_sensor_4_joint" type="fixed">
+    <origin rpy="1.107 0.000 3.050" xyz="0.004 0.074 0.093"/>
+    <axis xyz="0.081 0.89 0.448"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_4"/>
+  </joint>
+  <link name="link2_sensor_4"/>
+  <joint name="link2_sensor_5_joint" type="fixed">
+    <origin rpy="0.869 -0.000 3.063" xyz="0.001 0.117 0.045"/>
+    <axis xyz="0.06 0.761 0.646"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_5"/>
+  </joint>
+  <link name="link2_sensor_5"/>
+  <joint name="link2_sensor_6_joint" type="fixed">
+    <origin rpy="-0.676 -3.142 -0.578" xyz="0.019 0.111 -0.046"/>
+    <axis xyz="0.342 0.524 -0.78"/>
+    <parent link="link2_skin"/>
+    <child link="link2_sensor_6"/>
+  </joint>
+  <link name="link2_sensor_6"/>
+  <link name="fr3_link3">
+    <visual name="fr3_link3_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link3.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link3_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link3.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0407015686 -0.0048200565 -0.0289730823"/>
+      <mass value="2.2449013699"/>
+      <inertia ixx="0.02410142547240885" ixy="0.002404694559042109" ixz="-0.002856269270114313" iyy="0.01974053266708178" iyz="-0.002104212683891874" izz="0.019044494482244823"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint3" type="revolute">
+    <origin rpy="1.570796326794897 0 0" xyz="0 -0.316 0"/>
+    <parent link="fr3_link2"/>
+    <child link="fr3_link3"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87.0" lower="-2.9007" upper="2.9007" velocity="2.62"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+  <link name="link3_skin">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/skin/self-cap/link3_fancy.stl" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="link3_base_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="fr3_link3"/>
+    <child link="link3_skin"/>
+  </joint>
+  <joint name="link3_sensor_0_joint" type="fixed">
+    <origin rpy="1.392 0.000 -3.082" xyz="0.008 0.051 -0.043"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_0"/>
+  </joint>
+  <link name="link3_sensor_0"/>
+  <joint name="link3_sensor_1_joint" type="fixed">
+    <origin rpy="1.768 -0.000 2.918" xyz="0.097 0.113 -0.015"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_1"/>
+  </joint>
+  <link name="link3_sensor_1"/>
+  <joint name="link3_sensor_2_joint" type="fixed">
+    <origin rpy="1.433 0.000 -0.799" xyz="-0.041 -0.037 -0.071"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_2"/>
+  </joint>
+  <link name="link3_sensor_2"/>
+  <joint name="link3_sensor_3_joint" type="fixed">
+    <origin rpy="1.189 -0.000 2.713" xyz="0.107 0.106 0.026"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_3"/>
+  </joint>
+  <link name="link3_sensor_3"/>
+  <joint name="link3_sensor_4_joint" type="fixed">
+    <origin rpy="1.084 -0.000 -2.868" xyz="0.067 0.106 0.031"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_4"/>
+  </joint>
+  <link name="link3_sensor_4"/>
+  <joint name="link3_sensor_5_joint" type="fixed">
+    <origin rpy="1.838 0.000 -2.747" xyz="0.057 0.108 -0.019"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_5"/>
+  </joint>
+  <link name="link3_sensor_5"/>
+  <joint name="link3_sensor_6_joint" type="fixed">
+    <origin rpy="1.426 0.000 -2.050" xyz="-0.050 0.023 -0.063"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_6"/>
+  </joint>
+  <link name="link3_sensor_6"/>
+  <joint name="link3_sensor_7_joint" type="fixed">
+    <origin rpy="-0.311 3.142 -0.185" xyz="0.085 0.086 -0.050"/>
+    <parent link="link3_skin"/>
+    <child link="link3_sensor_7"/>
+  </joint>
+  <link name="link3_sensor_7"/>
+  <link name="fr3_link4">
+    <visual name="fr3_link4_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link4.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link4_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link4.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0459100965 0.0630492960 -0.0085187868"/>
+      <mass value="2.6155955791"/>
+      <inertia ixx="0.03452998321913202" ixy="0.01322552265982813" ixz="0.01015142998484113" iyy="0.028881621933049058" iyz="-0.0009762833870704552" izz="0.04125471171146641"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint4" type="revolute">
+    <origin rpy="1.570796326794897 0 0" xyz="0.0825 0 0"/>
+    <parent link="fr3_link3"/>
+    <child link="fr3_link4"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87.0" lower="-3.0421" upper="-0.1518" velocity="2.62"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+  <link name="fr3_link5">
+    <visual name="fr3_link5_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link5.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link5_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link5.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0016039605 0.0292536262 -0.0972965990"/>
+      <mass value="2.3271207594"/>
+      <inertia ixx="0.051610278463662895" ixy="-0.005715173387783472" ixz="-0.0035673167625872135" iyy="0.04787729713371481" iyz="0.010673985108535986" izz="0.016423625579357254"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint5" type="revolute">
+    <origin rpy="-1.570796326794897 0 0" xyz="-0.0825 0.384 0"/>
+    <parent link="fr3_link4"/>
+    <child link="fr3_link5"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="12.0" lower="-2.8065" upper="2.8065" velocity="5.26"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+  <link name="link5_skin">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/skin/self-cap/link5_fancy.stl" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="link5_base_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="fr3_link5"/>
+    <child link="link5_skin"/>
+  </joint>
+  <joint name="link5_sensor_0_joint" type="fixed">
+    <origin rpy="-1.262 3.142 0.019" xyz="-0.000 0.096 -0.184"/>
+    <parent link="link5_skin"/>
+    <child link="link5_sensor_0"/>
+  </joint>
+  <link name="link5_sensor_0"/>
+  <joint name="link5_sensor_1_joint" type="fixed">
+    <origin rpy="-1.229 -3.142 0.054" xyz="-0.007 0.127 -0.038"/>
+    <parent link="link5_skin"/>
+    <child link="link5_sensor_1"/>
+  </joint>
+  <link name="link5_sensor_1"/>
+  <joint name="link5_sensor_2_joint" type="fixed">
+    <origin rpy="1.754 0.000 -2.906" xyz="-0.016 0.104 -0.138"/>
+    <parent link="link5_skin"/>
+    <child link="link5_sensor_2"/>
+  </joint>
+  <link name="link5_sensor_2"/>
+  <joint name="link5_sensor_3_joint" type="fixed">
+    <origin rpy="1.136 0.000 -3.040" xyz="-0.007 0.133 0.023"/>
+    <parent link="link5_skin"/>
+    <child link="link5_sensor_3"/>
+  </joint>
+  <link name="link5_sensor_3"/>
+  <joint name="link5_sensor_4_joint" type="fixed">
+    <origin rpy="1.760 -0.000 2.750" xyz="0.026 0.130 -0.013"/>
+    <parent link="link5_skin"/>
+    <child link="link5_sensor_4"/>
+  </joint>
+  <link name="link5_sensor_4"/>
+  <joint name="link5_sensor_5_joint" type="fixed">
+    <origin rpy="-1.403 -3.142 0.049" xyz="-0.004 0.115 -0.089"/>
+    <parent link="link5_skin"/>
+    <child link="link5_sensor_5"/>
+  </joint>
+  <link name="link5_sensor_5"/>
+  <link name="fr3_link6">
+    <visual name="fr3_link6_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link6.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link6_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link6.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0597131221 -0.0410294666 -0.0101692726"/>
+      <mass value="1.8170376524"/>
+      <inertia ixx="0.005412333594383447" ixy="0.006193456360285834" ixz="0.0014219289306117652" iyy="0.014058329545509979" iyz="-0.0013140753741120031" izz="0.016080817924212554"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint6" type="revolute">
+    <origin rpy="1.570796326794897 0 0" xyz="0 0 0"/>
+    <parent link="fr3_link5"/>
+    <child link="fr3_link6"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="12.0" lower="0.5445" upper="4.5169" velocity="4.18"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+  <link name="link6_skin">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/skin/self-cap/link6_fancy.stl" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="link6_base_joint" type="fixed">
+    <origin rpy="-1.57079632679 0 0" xyz="0 0 0"/>
+    <parent link="fr3_link6"/>
+    <child link="link6_skin"/>
+  </joint>
+  <joint name="link6_sensor_0_joint" type="fixed">
+    <origin rpy="1.582 0.000 0.494" xyz="0.117 -0.045 -0.004"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_0"/>
+  </joint>
+  <link name="link6_sensor_0"/>
+  <joint name="link6_sensor_1_joint" type="fixed">
+    <origin rpy="1.451 0.000 1.101" xyz="0.133 -0.025 0.039"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_1"/>
+  </joint>
+  <link name="link6_sensor_1"/>
+  <joint name="link6_sensor_2_joint" type="fixed">
+    <origin rpy="1.487 -0.000 1.464" xyz="0.140 -0.002 0.030"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_2"/>
+  </joint>
+  <link name="link6_sensor_2"/>
+  <joint name="link6_sensor_3_joint" type="fixed">
+    <origin rpy="1.585 -0.000 2.644" xyz="0.113 0.047 0.002"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_3"/>
+  </joint>
+  <link name="link6_sensor_3"/>
+  <joint name="link6_sensor_4_joint" type="fixed">
+    <origin rpy="1.533 -0.000 2.048" xyz="0.132 0.029 0.018"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_4"/>
+  </joint>
+  <link name="link6_sensor_4"/>
+  <joint name="link6_sensor_5_joint" type="fixed">
+    <origin rpy="1.581 -0.000 1.470" xyz="0.141 -0.001 -0.002"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_5"/>
+  </joint>
+  <link name="link6_sensor_5"/>
+  <joint name="link6_sensor_6_joint" type="fixed">
+    <origin rpy="1.541 -0.000 0.888" xyz="0.130 -0.033 0.015"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_6"/>
+  </joint>
+  <link name="link6_sensor_6"/>
+  <joint name="link6_sensor_7_joint" type="fixed">
+    <origin rpy="1.488 0.000 -3.049" xyz="0.087 0.051 0.036"/>
+    <parent link="link6_skin"/>
+    <child link="link6_sensor_7"/>
+  </joint>
+  <link name="link6_sensor_7"/>
+  <link name="fr3_link7">
+    <visual name="fr3_link7_visual">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/visual/link7.dae"/>
+      </geometry>
+    </visual>
+    <collision name="fr3_link7_collision">
+      <geometry>
+        <mesh filename="package://gentact_ros_tools/meshes/robot_arms/fr3/collision/link7.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0045225817 0.0086261921 -0.0161633251"/>
+      <mass value="0.6271432862"/>
+      <inertia ixx="0.00021092389150104718" ixy="-2.433299114461931e-05" ixz="4.564480393778983e-05" iyy="0.00017718568002411474" iyz="8.744070223226438e-05" izz="5.993190599659971e-05"/>
+    </inertial>
+  </link>
+  <joint name="fr3_joint7" type="revolute">
+    <origin rpy="1.570796326794897 0 0" xyz="0.088 0 0"/>
+    <parent link="fr3_link6"/>
+    <child link="fr3_link7"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="12.0" lower="-3.0159" upper="3.0159" velocity="5.26"/>
+    <dynamics damping="0.003" friction="0.2"/>
+  </joint>
+</robot>

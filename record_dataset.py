@@ -1,7 +1,7 @@
 """Move the Franka through joint positions and save each stopped pose with all proximity sensors.
 
 Each row in the HDF5 file is one step: the joint target, the measured robot state after
-the motion finishes, and one packet from every link.
+the motion finishes, and one packet from each of the 41 proximity sensors.
 
 Requires franky (built from submodules/franky) and h5py.
 """
@@ -17,17 +17,9 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from sensor_layout import LINKS, SENSORS_PER_LINK
+
 GROUP = "239.0.0.1"
-LINKS = {
-    "link1": 5004,
-    "link2": 5005,
-    "link3": 5006,
-    "link5_small": 5007,
-    "link5_large": 5008,
-    "link6": 5009,
-    "link4": 5010,
-    "end_effector": 5011,
-}
 
 # Joint targets [rad] from the franky waypoint example. Edit these for the workspace.
 POSITIONS = np.array(
@@ -83,18 +75,30 @@ def drain_sensors(sockets):
 
 
 def read_sensor_snapshot(sockets, timeout):
-    readings = {}
+    readings = {name: {} for name in LINKS}
     deadline = time.monotonic() + timeout
-    while len(readings) < len(LINKS):
+
+    def missing_sensors():
+        missing = []
+        for name, count in SENSORS_PER_LINK.items():
+            for sensor_id in range(count):
+                if sensor_id not in readings[name]:
+                    missing.append(f"{name} sensor {sensor_id}")
+        return missing
+
+    while missing_sensors():
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            missing = [name for name in LINKS if name not in readings]
-            raise TimeoutError("timed out waiting for sensors: " + ", ".join(missing))
+            raise TimeoutError("timed out waiting for sensors: " + ", ".join(missing_sensors()))
         readable, _, _ = select.select(list(sockets), [], [], remaining)
         for sock in readable:
             data, addr = sock.recvfrom(65535)
-            readings[sockets[sock]] = parse_packet(data, addr)
-    return readings
+            packet = parse_packet(data, addr)
+            readings[sockets[sock]][packet["sensor"]] = packet
+    return {
+        name: [readings[name][sensor_id] for sensor_id in sorted(readings[name])]
+        for name in LINKS
+    }
 
 
 def elbow_vector(elbow):
@@ -114,18 +118,6 @@ def read_robot_state(robot):
         "quaternion_xyzw": np.asarray(pose.quaternion, dtype=np.float64).reshape(4),
         "elbow": elbow_vector(robot.state.elbow),
     }
-
-
-def _write_depths(group, depth_rows):
-    arrays = [np.asarray(row, dtype=np.uint16) for row in depth_rows]
-    widths = {array.size for array in arrays}
-    if len(widths) == 1:
-        group.create_dataset("depth_mm", data=np.stack(arrays), compression="gzip")
-        return
-    dtype = h5py.vlen_dtype(np.dtype("uint16"))
-    dataset = group.create_dataset("depth_mm", (len(arrays),), dtype=dtype)
-    for index, array in enumerate(arrays):
-        dataset[index] = array
 
 
 def save_h5(path, records, metadata):
@@ -157,20 +149,26 @@ def save_h5(path, records, metadata):
         for name, port in LINKS.items():
             group = sensors.create_group(name)
             group.attrs["port"] = port
-            readings = [record["sensors"][name] for record in records]
-            _write_depths(group, [reading["depth_mm"] for reading in readings])
+            per_step = [record["sensors"][name] for record in records]
+            sensor_ids = [packet["sensor"] for packet in per_step[0]]
+            depth = np.stack([
+                np.stack([np.asarray(packet["depth_mm"], dtype=np.uint16) for packet in step_packets])
+                for step_packets in per_step
+            ])
+            group.create_dataset("sensor_id", data=np.array(sensor_ids, dtype=np.uint8))
+            group.create_dataset("depth_mm", data=depth, compression="gzip")
             group["depth_mm"].attrs["unit"] = "mm"
-            group.create_dataset(
-                "sensor_id",
-                data=np.array([reading["sensor"] for reading in readings], dtype=np.uint8),
-            )
+            group["depth_mm"].attrs["layout"] = "(step, sensor, zone)"
             group.create_dataset(
                 "packet_len",
-                data=np.array([reading["len"] for reading in readings], dtype=np.int32),
+                data=np.array([[packet["len"] for packet in step_packets] for step_packets in per_step], dtype=np.int32),
             )
             group.create_dataset(
                 "address",
-                data=np.array([reading["address"] for reading in readings], dtype=h5py.string_dtype(encoding="utf-8")),
+                data=np.array(
+                    [[packet["address"] for packet in step_packets] for step_packets in per_step],
+                    dtype=h5py.string_dtype(encoding="utf-8"),
+                ),
             )
     return path
 
@@ -197,8 +195,8 @@ def collect(host, dynamics, settle, sensor_timeout, output):
             record["target_q"] = np.asarray(target, dtype=np.float64)
             record["sensors"] = sensors
             records.append(record)
-            counts = ", ".join(f"{name}={sensors[name]['depth_mm'].size}" for name in LINKS)
-            print(f"step {step}: recorded q={record['q'].round(4).tolist()} depths {counts}")
+            counted = sum(len(sensors[name]) for name in LINKS)
+            print(f"step {step}: recorded q={record['q'].round(4).tolist()} sensors {counted}")
     finally:
         close_sensor_sockets(sockets)
         if records:
