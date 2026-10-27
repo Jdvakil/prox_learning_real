@@ -97,17 +97,22 @@ def read_sensor_snapshot(sockets, timeout):
     return readings
 
 
+def elbow_vector(elbow):
+    flip = elbow.joint_4_flip
+    flip_value = np.nan if flip is None else float(int(flip))
+    return np.array([float(elbow.joint_3_pos), flip_value], dtype=np.float64)
+
+
 def read_robot_state(robot):
     joints = robot.current_joint_state
     pose = robot.current_cartesian_state.pose.end_effector_pose
-    elbow = np.asarray(robot.state.elbow, dtype=np.float64).reshape(2)
     return {
         "q": np.asarray(joints.position, dtype=np.float64).reshape(7),
         "dq": np.asarray(joints.velocity, dtype=np.float64).reshape(7),
         "O_T_EE": np.asarray(pose.matrix, dtype=np.float64).reshape(4, 4),
         "translation": np.asarray(pose.translation, dtype=np.float64).reshape(3),
         "quaternion_xyzw": np.asarray(pose.quaternion, dtype=np.float64).reshape(4),
-        "elbow": elbow,
+        "elbow": elbow_vector(robot.state.elbow),
     }
 
 
@@ -141,7 +146,7 @@ def save_h5(path, records, metadata):
             ("dq", "rad/s"),
             ("translation", "m"),
             ("quaternion_xyzw", "xyzw"),
-            ("elbow", "rad"),
+            ("elbow", "joint 3 rad, joint 4 flip (-1, 0, 1)"),
         ):
             robot.create_dataset(key, data=np.stack([record[key] for record in records]))
             robot[key].attrs["unit"] = unit
