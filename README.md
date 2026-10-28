@@ -11,6 +11,7 @@ pip install pyrealsense2 "imageio[ffmpeg]" h5py numpy
 
 ```bash
 python cameras.py                                    # serials + one colour/depth snapshot each -> camera_check/
+python cameras.py --reset                            # same, USB power-cycle first (if "no frames" / stalled)
 python kinesthetic.py teach --home-gripper           # -> demos/<utc stamp>.h5
 python kinesthetic.py replay demos/*.h5 --wrist-serial <serial> --exo-serial <serial>
                                                      # -> dataset/rows/<utc stamp>_<demo>_r0/

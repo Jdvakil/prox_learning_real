@@ -29,6 +29,33 @@ def connected():
             for dev in rs.context().query_devices()]
 
 
+def usb_type(serial):
+    """USB link the camera enumerated on ("3.2", "2.1", ...); "?" if unknown."""
+    import pyrealsense2 as rs
+
+    for dev in rs.context().query_devices():
+        if dev.get_info(rs.camera_info.serial_number) == serial:
+            if dev.supports(rs.camera_info.usb_type_descriptor):
+                return dev.get_info(rs.camera_info.usb_type_descriptor)
+    return "?"
+
+
+def hardware_reset(serials, settle=5.0):
+    """Power-cycle the cameras over USB and wait for them to re-enumerate."""
+    import pyrealsense2 as rs
+
+    for dev in rs.context().query_devices():
+        if dev.get_info(rs.camera_info.serial_number) in serials:
+            dev.hardware_reset()
+    deadline = time.monotonic() + 20.0
+    time.sleep(settle)
+    while time.monotonic() < deadline:
+        if set(serials) <= {s for s, _ in connected()}:
+            return
+        time.sleep(0.5)
+    raise RuntimeError(f"cameras did not come back after reset: {serials}")
+
+
 class RealSenseCamera(threading.Thread):
     """One D435: colour + aligned depth (uint16 mm), newest frame pair kept."""
 
@@ -60,9 +87,20 @@ class RealSenseCamera(threading.Thread):
         self.stop_event = threading.Event()
 
     def run(self):
+        # The first frameset can take several seconds after start; later misses are tolerated
+        # until no frame has arrived for 5 s.
+        first_timeout_ms, stall_s = 10000, 5.0
+        last = time.monotonic()
         try:
             while not self.stop_event.is_set():
-                frames = self.align.process(self.pipeline.wait_for_frames(2000))
+                ok, frames = self.pipeline.try_wait_for_frames(first_timeout_ms if self.count == 0 else 1000)
+                if not ok:
+                    if self.count == 0 or time.monotonic() - last > stall_s:
+                        raise RuntimeError(f"no frames from {self.serial} (USB {usb_type(self.serial)}); "
+                                           "try a USB 3 port/cable, lower --fps/--width/--height, or --reset")
+                    continue
+                last = time.monotonic()
+                frames = self.align.process(frames)
                 color, depth = frames.get_color_frame(), frames.get_depth_frame()
                 if not color or not depth:
                     continue
@@ -85,7 +123,7 @@ class RealSenseCamera(threading.Thread):
         with self.lock:
             return self.frame, self.count
 
-    def wait_ready(self, frames=15, timeout=10.0):
+    def wait_ready(self, frames=15, timeout=15.0):
         """Block until `frames` frames arrived (auto exposure settles over the first few)."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -128,12 +166,20 @@ def main():
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--reset", action="store_true", help="USB power-cycle every camera first")
     args = parser.parse_args()
     devices = connected()
     if not devices:
         raise SystemExit("no RealSense camera found")
+    if args.reset:
+        hardware_reset([s for s, _ in devices])
     args.out.mkdir(parents=True, exist_ok=True)
     for serial, name in devices:
+        usb = usb_type(serial)
+        print(f"{serial}  {name}  USB {usb}")
+        if usb.startswith("2"):
+            print(f"  warning: {serial} on USB {usb}; colour+depth at {args.width}x{args.height}@{args.fps} "
+                  "may not stream (use a USB 3 port/cable, or e.g. --fps 15 / --width 424 --height 240)")
         cam = RealSenseCamera(serial, serial, args.width, args.height, args.fps)
         cam.start()
         try:
