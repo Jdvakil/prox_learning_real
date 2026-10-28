@@ -1,0 +1,11 @@
+(franky) jaydv@verstappen:~/prox_learning_real$ python cameras.py 
+Traceback (most recent call last):
+  File "/home/jaydv/prox_learning_real/cameras.py", line 154, in <module>
+    main()
+  File "/home/jaydv/prox_learning_real/cameras.py", line 140, in main
+    cam.wait_ready(frames=30)
+  File "/home/jaydv/prox_learning_real/cameras.py", line 92, in wait_ready
+    frame, count = self.latest()
+  File "/home/jaydv/prox_learning_real/cameras.py", line 84, in latest
+    raise RuntimeError(f"{self.name} camera stopped: {self.error!r}")
+RuntimeError: 943222071556 camera stopped: RuntimeError("Frame didn't arrive within 2000")
