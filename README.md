@@ -58,14 +58,20 @@ Edit `LAB` in `sim/lab_scene.py` with the measured bench (cabinet, block, tripod
 ## Waypoint recorder
 
 ```bash
-python record_dataset.py                   # -> recordings/<utc stamp>.h5
+python record_dataset.py --wrist-serial <serial> --exo-serial <serial>   # -> recordings/<utc stamp>/
 ```
 
 The arm moves through `POSITIONS` (top of `record_dataset.py`) while the robot state and the
-newest packet of all 41 sensors are logged on a fixed 15 Hz clock. Recording waits until every
-sensor has reported (`--allow-missing` to skip that) and prints tick timing, per-sensor packet
-rate and packet age when it ends. Flags: `--pause` (hold at each waypoint, still logging),
-`--tail`, `--dynamics`, `--no-gripper`, `--output`. Same h5 layout, without cameras.
+newest packet of all 41 sensors are logged on a fixed 15 Hz clock. Both D435s are recorded at
+their full 30 fps: every frame's depth goes into `trajectory.h5` (`traj_0/real/cameras/<name>/`,
+with per-frame `t`, `frame_number`, and `tick_frame` = the frame used at each 15 Hz tick) and its
+RGB into `<name>_30fps.mp4`; the per-tick frame also goes into `episode_00000000_<name>.mp4` so
+the row converts like a replay row. Recording waits until every sensor has reported
+(`--allow-missing` to skip that) and prints tick timing, per-sensor packet rate, camera fps,
+dropped frames and writer backlog when it ends. Flags: `--pause` (hold at each waypoint, still
+logging), `--tail`, `--dynamics`, `--no-gripper`, `--output` (row folder), `--no-cameras`,
+`--cam-fps` (30), `--cam-width` / `--cam-height`, `--no-depth`, `--rgb-h5` (raw RGB of every
+frame in the h5, large). Gripper only read (width), not commanded.
 
 ## Sensors
 

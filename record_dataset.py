@@ -1,8 +1,19 @@
-"""Move the Franka through joint waypoints and log the robot and all 41 proximity sensors at 15 Hz.
+"""Move the Franka through joint waypoints and log the robot, all 41 proximity sensors and both D435s.
 
 The arm runs in a background thread while the main loop samples on a fixed 15 Hz clock, so the
 log covers the motion itself, not only the stops. A listener thread keeps the newest packet of
-every sensor; each tick stores that packet and how old it is.
+every sensor; each tick stores that packet and how old it is. Each camera (wrist, exocentric) is
+recorded at its full rate (30 fps): every frame is streamed to disk while the arm moves, and the
+newest frame at each 15 Hz tick also goes into a per-tick video for the ACT converter.
+
+One recording is a row folder:
+
+  recordings/<utc stamp>/
+      trajectory.h5                       layout below
+      episode_00000000_wrist_camera.mp4   RGB, one frame per 15 Hz tick (convert_pact_place_to_act)
+      episode_00000000_exo_camera_1.mp4
+      wrist_camera_30fps.mp4              RGB, every camera frame
+      exo_camera_1_30fps.mp4
 
 The HDF5 file uses the sim datagen layout (MolmoSpaces trajectories_*.h5) so the prox_learning
 converters and viewers read it the same way:
@@ -17,16 +28,21 @@ converters and viewers read it the same way:
   traj_0/actions/joint_pos         (T, 2000) uint8  JSON {"arm": waypoint target, "gripper": [0.0]}
   traj_0/real/...                  raw extras: both 8x8 blocks in mm, packet age, fresh flag,
                                    timestamps, O_T_EE, elbow, gripper width
+  traj_0/real/cameras/<name>/      every camera frame (N at 30 fps): depth_mm (N, H, W) uint16 mm
+                                   aligned to colour, t, frame_number, device_time_ms; rgb (N, H, W, 3)
+                                   with --rgb-h5; tick_frame (T,) = index of the frame used at each tick;
+                                   intrinsics and serial as attributes
 
 <sim name> is the camera in assets/robots/franka_skin/model_hybrid_franka_hand.xml
 (sensor_layout.sim_name). Each packet is 1 id byte + 128 uint16 mm: two row-major 8x8 blocks,
 block 1 confident zones only (4000 = no target), block 2 the same plus low-confidence fills.
 
-Requires franky (built from submodules/franky) and h5py.
+Requires franky (built from submodules/franky), h5py, pyrealsense2 and imageio[ffmpeg] (or opencv).
 """
 
 import argparse
 import json
+import queue
 import select
 import socket
 import struct
@@ -153,6 +169,138 @@ class MotionRunner(threading.Thread):
             self.done.set()
 
 
+class Mp4Writer:
+    """Streaming RGB uint8 -> H.264 mp4 (imageio-ffmpeg), or MPEG-4 through OpenCV without imageio."""
+
+    def __init__(self, path, fps):
+        self.path, self.fps = str(path), fps
+        self.writer = None
+        self.cv2 = None
+
+    def append(self, frame):
+        if self.writer is None:
+            try:
+                import imageio.v2 as imageio
+
+                self.writer = imageio.get_writer(self.path, fps=self.fps, codec="libx264", quality=8,
+                                                 macro_block_size=1, ffmpeg_log_level="error")
+            except ImportError:
+                import cv2
+
+                self.cv2 = cv2
+                height, width = frame.shape[:2]
+                self.writer = cv2.VideoWriter(self.path, cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (width, height))
+        if self.cv2 is None:
+            self.writer.append_data(frame)
+        else:
+            self.writer.write(self.cv2.cvtColor(frame, self.cv2.COLOR_RGB2BGR))
+
+    def close(self):
+        if self.writer is None:
+            return
+        if self.cv2 is None:
+            self.writer.close()
+        else:
+            self.writer.release()
+
+
+class CameraRecorder(threading.Thread):
+    """Writes every frame of one RealSenseCamera to disk while recording.
+
+    The camera thread hands each frame over through cam.sink; this thread appends the depth to a
+    resizable dataset in the open trajectory.h5 (and the RGB with rgb_h5) and the RGB to
+    <name>_30fps.mp4. tick() queues the RGB used at a 15 Hz tick for the per-tick episode mp4.
+    """
+
+    def __init__(self, cam, group, row, store_depth, store_rgb):
+        super().__init__(daemon=True)
+        self.cam, self.group = cam, group
+        self.store_depth, self.store_rgb = store_depth, store_rgb
+        self.queue = queue.Queue()
+        self.full = Mp4Writer(row / f"{cam.name}_30fps.mp4", cam.fps)
+        self.episode = Mp4Writer(row / f"episode_00000000_{cam.name}.mp4", RATE_HZ)
+        self.number, self.device_ms, self.arrived = [], [], []
+        self.ticks = 0
+        self.backlog = 0
+        self.error = None
+        self.depth = self.rgb = None
+
+    def begin(self):
+        self.start()
+        self.cam.sink = lambda frame: self.queue.put(("frame", frame))
+
+    def tick(self, rgb):
+        if self.error is None:
+            self.queue.put(("tick", rgb))
+
+    def finish(self):
+        self.cam.sink = None
+        self.queue.put(("stop", None))
+        self.join()
+        if self.error is not None:
+            print(f"warning: {self.cam.name} recorder stopped early: {self.error!r}")
+
+    def write_frame(self, frame):
+        rgb, depth, number, device_ms, arrived = frame
+        n = len(self.number)
+        height, width = depth.shape
+        if self.store_depth:
+            if self.depth is None:
+                self.depth = self.group.create_dataset(
+                    "depth_mm", shape=(0, height, width), maxshape=(None, height, width), dtype=np.uint16,
+                    chunks=(1, height, width), compression="gzip", compression_opts=1, shuffle=True)
+                self.depth.attrs["meaning"] = "z depth aligned to the colour image, mm, 0 = no depth"
+            self.depth.resize(n + 1, axis=0)
+            self.depth[n] = depth
+        if self.store_rgb:
+            if self.rgb is None:
+                self.rgb = self.group.create_dataset(
+                    "rgb", shape=(0, height, width, 3), maxshape=(None, height, width, 3), dtype=np.uint8,
+                    chunks=(1, height, width, 3), compression="lzf")
+            self.rgb.resize(n + 1, axis=0)
+            self.rgb[n] = rgb
+        self.full.append(rgb)
+        self.number.append(number)
+        self.device_ms.append(device_ms)
+        self.arrived.append(arrived)
+
+    def run(self):
+        try:
+            while True:
+                self.backlog = max(self.backlog, self.queue.qsize())
+                kind, item = self.queue.get()
+                if kind == "stop":
+                    break
+                if kind == "frame":
+                    self.write_frame(item)
+                else:
+                    self.episode.append(item)
+                    self.ticks += 1
+        except Exception as exc:
+            self.error = exc
+            self.cam.sink = None
+        finally:
+            self.full.close()
+            self.episode.close()
+
+    def write_index(self, t0, tick_numbers):
+        """Per-frame timestamps and the frame each 15 Hz tick used; call after finish()."""
+        group, cam = self.group, self.cam
+        for key, value in cam.intrinsics.items():
+            group.attrs[key] = value
+        group.attrs["serial"] = cam.serial
+        group.attrs["fps"] = cam.fps
+        group.attrs["depth_scale_m"] = 0.001
+        number = np.array(self.number, dtype=np.int64)
+        group.create_dataset("frame_number", data=number)
+        group.create_dataset("device_time_ms", data=np.array(self.device_ms, dtype=np.float64))
+        group.create_dataset("t", data=np.array(self.arrived, dtype=np.float64) - t0)
+        group["t"].attrs["unit"] = "s since the first tick (monotonic clock), at frame arrival"
+        tick_frame = np.searchsorted(number, np.asarray(tick_numbers, dtype=np.int64), side="right") - 1
+        group.create_dataset("tick_frame", data=np.maximum(tick_frame, 0))
+        group["tick_frame"].attrs["meaning"] = "index into the per-frame arrays of the newest frame at each tick"
+
+
 def json_row(value):
     raw = json.dumps(value).encode("utf-8")
     if len(raw) >= JSON_ROW:
@@ -202,7 +350,7 @@ def wait_for_sensors(listener, timeout, allow_missing):
         print("warning: " + message)
 
 
-def sample(robot, listener, gripper, runner, t0):
+def sample(robot, listener, gripper, runner, recorders, t0):
     now = time.monotonic()
     record = read_robot_state(robot)
     record["t"] = now - t0
@@ -211,6 +359,10 @@ def sample(robot, listener, gripper, runner, t0):
     record["target_q"] = runner.positions[runner.phase]
     record["gripper_width"] = gripper.width if gripper else float("nan")
     record["depth_mm"], record["age_ms"], record["count"] = sensor_arrays(listener, now)
+    for rec in recorders:
+        (rgb, _, number, _, arrived), _ = rec.cam.latest()
+        rec.tick(rgb)
+        record[rec.cam.name] = (number, (now - arrived) * 1000.0)
     return record
 
 
@@ -241,9 +393,8 @@ def write_sensors(traj, depth, age, count):
     real["fresh"].attrs["meaning"] = "a new packet arrived since the previous tick"
 
 
-def save_h5(path, records, metadata):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def save_h5(handle, records, metadata):
+    """Write the 15 Hz ticks into an open trajectory.h5 (camera frames are already in it)."""
     T = len(records)
     stack = lambda key: np.stack([record[key] for record in records])
     q, dq = stack("q"), stack("dq")
@@ -252,88 +403,121 @@ def save_h5(path, records, metadata):
     finger_v = np.gradient(finger, stack("t")) if T > 1 else np.zeros(T)
     translation, quat_xyzw = stack("translation"), stack("quaternion_xyzw")
 
-    with h5py.File(path, "w") as handle:
-        handle.attrs["sim"] = False
-        traj = handle.create_group("traj_0")
-        for key, value in metadata.items():
-            traj.attrs[key] = value
+    handle.attrs["sim"] = False
+    traj = handle.require_group("traj_0")
+    for key, value in metadata.items():
+        traj.attrs[key] = value
 
-        agent = traj.create_group("obs/agent")
-        agent.create_dataset("qpos", data=np.stack([
-            json_row({"arm": q[t].tolist(), "base": [], "gripper": [float(finger[t])] * 2}) for t in range(T)]))
-        agent.create_dataset("qvel", data=np.stack([
-            json_row({"arm": dq[t].tolist(), "base": [], "gripper": [float(finger_v[t])] * 2}) for t in range(T)]))
+    agent = traj.create_group("obs/agent")
+    agent.create_dataset("qpos", data=np.stack([
+        json_row({"arm": q[t].tolist(), "base": [], "gripper": [float(finger[t])] * 2}) for t in range(T)]))
+    agent.create_dataset("qvel", data=np.stack([
+        json_row({"arm": dq[t].tolist(), "base": [], "gripper": [float(finger_v[t])] * 2}) for t in range(T)]))
 
-        extra = traj.create_group("obs/extra")
-        tcp = np.concatenate([translation, quat_xyzw[:, [3, 0, 1, 2]]], axis=1)
-        extra.create_dataset("tcp_pose", data=tcp.astype(np.float32))
-        extra["tcp_pose"].attrs["layout"] = "x, y, z, qw, qx, qy, qz of O_T_EE in the base frame"
-        extra.create_dataset("robot_base_pose", data=np.tile(np.array([0, 0, 0, 1, 0, 0, 0], np.float32), (T, 1)))
-        extra.create_dataset("policy_phase", data=stack("phase").astype(np.int64))
-        extra["policy_phase"].attrs["meaning"] = "index of the waypoint being executed"
+    extra = traj.create_group("obs/extra")
+    tcp = np.concatenate([translation, quat_xyzw[:, [3, 0, 1, 2]]], axis=1)
+    extra.create_dataset("tcp_pose", data=tcp.astype(np.float32))
+    extra["tcp_pose"].attrs["layout"] = "x, y, z, qw, qx, qy, qz of O_T_EE in the base frame"
+    extra.create_dataset("robot_base_pose", data=np.tile(np.array([0, 0, 0, 1, 0, 0, 0], np.float32), (T, 1)))
+    extra.create_dataset("policy_phase", data=stack("phase").astype(np.int64))
+    extra["policy_phase"].attrs["meaning"] = "index of the waypoint being executed"
 
-        write_sensors(traj, stack("depth_mm"), stack("age_ms"), stack("count"))
+    write_sensors(traj, stack("depth_mm"), stack("age_ms"), stack("count"))
 
-        targets = stack("target_q")
-        actions = traj.create_group("actions")
-        actions.create_dataset("joint_pos", data=np.stack([
-            json_row({"arm": targets[t].tolist(), "gripper": [0.0]}) for t in range(T)]))
-        actions.create_dataset("commanded_action", data=np.stack([
-            json_row({"arm": targets[t].tolist(), "base": [], "gripper": [0.0]}) for t in range(T)]))
-        actions.attrs["meaning"] = "joint target of the current waypoint (franky JointMotion)"
+    targets = stack("target_q")
+    actions = traj.create_group("actions")
+    actions.create_dataset("joint_pos", data=np.stack([
+        json_row({"arm": targets[t].tolist(), "gripper": [0.0]}) for t in range(T)]))
+    actions.create_dataset("commanded_action", data=np.stack([
+        json_row({"arm": targets[t].tolist(), "base": [], "gripper": [0.0]}) for t in range(T)]))
+    actions.attrs["meaning"] = "joint target of the current waypoint (franky JointMotion)"
 
-        for key in ("success", "fail", "truncated"):
-            traj.create_dataset(key, data=np.zeros(T, dtype=bool))
-        terminated = np.zeros(T, dtype=bool)
-        terminated[-1] = True
-        traj.create_dataset("terminated", data=terminated)
-        traj.create_dataset("rewards", data=np.zeros(T, dtype=np.float32))
+    for key in ("success", "fail", "truncated"):
+        traj.create_dataset(key, data=np.zeros(T, dtype=bool))
+    terminated = np.zeros(T, dtype=bool)
+    terminated[-1] = True
+    traj.create_dataset("terminated", data=terminated)
+    traj.create_dataset("rewards", data=np.zeros(T, dtype=np.float32))
 
-        real = traj.require_group("real")
-        real.create_dataset("t", data=stack("t"))
-        real["t"].attrs["unit"] = "s since the first tick (monotonic clock)"
-        real.create_dataset("wall_time", data=stack("wall_time"))
-        real.create_dataset("q", data=q)
-        real.create_dataset("dq", data=dq)
-        real.create_dataset("O_T_EE", data=stack("O_T_EE"))
-        real["O_T_EE"].attrs["layout"] = "4x4 homogeneous, translation in the last column"
-        real.create_dataset("elbow", data=stack("elbow"))
-        real.create_dataset("target_q", data=targets)
-        real.create_dataset("gripper_width", data=width)
-    return path
+    real = traj.require_group("real")
+    real.create_dataset("t", data=stack("t"))
+    real["t"].attrs["unit"] = "s since the first tick (monotonic clock)"
+    real.create_dataset("wall_time", data=stack("wall_time"))
+    real.create_dataset("q", data=q)
+    real.create_dataset("dq", data=dq)
+    real.create_dataset("O_T_EE", data=stack("O_T_EE"))
+    real["O_T_EE"].attrs["layout"] = "4x4 homogeneous, translation in the last column"
+    real.create_dataset("elbow", data=stack("elbow"))
+    real.create_dataset("target_q", data=targets)
+    real.create_dataset("gripper_width", data=width)
 
 
-def collect(host, dynamics, pause, warmup_timeout, tail, use_gripper, allow_missing, output):
+def open_cameras(args):
+    """Start the wrist (required) and exocentric RealSense threads and wait for auto exposure."""
+    from cameras import RealSenseCamera
+
+    if not args.wrist_serial:
+        raise SystemExit("--wrist-serial is required (python cameras.py lists the cameras), or pass --no-cameras")
+    cameras = []
+    try:
+        for name, serial in (("wrist_camera", args.wrist_serial), ("exo_camera_1", args.exo_serial)):
+            if serial:
+                cameras.append(RealSenseCamera(name, serial, args.cam_width, args.cam_height, args.cam_fps))
+        for cam in cameras:
+            cam.start()
+        for cam in cameras:
+            cam.wait_ready()
+    except BaseException:
+        for cam in cameras:
+            cam.close()
+        raise
+    return cameras
+
+
+def collect(args, row):
     from franky import Robot
 
     sockets = open_sensor_sockets()
     listener = SensorListener(sockets)
     listener.start()
     gripper = None
+    cameras, recorders = [], []
+    handle = None
     records = []
+    t0 = time.monotonic()
     try:
-        wait_for_sensors(listener, warmup_timeout, allow_missing)
-        robot = Robot(host)
+        wait_for_sensors(listener, args.warmup_timeout, args.allow_missing)
+        if not args.no_cameras:
+            cameras = open_cameras(args)
+        robot = Robot(args.host)
         robot.recover_from_errors()
-        robot.relative_dynamics_factor = dynamics
-        if use_gripper:
+        robot.relative_dynamics_factor = args.dynamics
+        if not args.no_gripper:
             try:
-                gripper = GripperReader(host)
+                gripper = GripperReader(args.host)
                 gripper.start()
             except Exception as exc:
                 print(f"warning: no gripper width ({exc})")
                 gripper = None
 
-        runner = MotionRunner(robot, POSITIONS, pause)
+        row.mkdir(parents=True, exist_ok=False)
+        handle = h5py.File(row / "trajectory.h5", "w")
+        for cam in cameras:
+            group = handle.create_group(f"traj_0/real/cameras/{cam.name}")
+            recorders.append(CameraRecorder(cam, group, row, not args.no_depth, args.rgb_h5))
+
+        runner = MotionRunner(robot, POSITIONS, args.pause)
         period = 1.0 / RATE_HZ
+        for rec in recorders:
+            rec.begin()
         t0 = time.monotonic()
         runner.start()
         tick = 0
         stop_at = None
         while True:
-            records.append(sample(robot, listener, gripper, runner, t0))
+            records.append(sample(robot, listener, gripper, runner, recorders, t0))
             if runner.done.is_set() and stop_at is None:
-                stop_at = time.monotonic() + tail
+                stop_at = time.monotonic() + args.tail
             if stop_at is not None and time.monotonic() >= stop_at:
                 break
             tick += 1
@@ -345,29 +529,39 @@ def collect(host, dynamics, pause, warmup_timeout, tail, use_gripper, allow_miss
         if runner.error is not None:
             print(f"motion stopped early: {runner.error}")
     finally:
+        for rec in recorders:
+            rec.finish()
         listener.stop_event.set()
         listener.join(timeout=1.0)
         if gripper:
             gripper.stop_event.set()
         for sock in sockets:
             sock.close()
-        if records:
-            metadata = {
-                "host": host,
-                "relative_dynamics_factor": dynamics,
-                "multicast_group": GROUP,
-                "created_utc": datetime.now(timezone.utc).isoformat(),
-                "policy_dt_ms": 1000.0 / RATE_HZ,
-                "rate_hz": RATE_HZ,
-                "waypoints": POSITIONS,
-                "pause_s": pause,
-                "bad_packets": listener.bad,
-            }
-            saved = save_h5(output, records, metadata)
-            report(records, saved)
+        for cam in cameras:
+            cam.close()
+        if handle is not None:
+            if records:
+                for rec in recorders:
+                    rec.write_index(t0, [record[rec.cam.name][0] for record in records])
+                metadata = {
+                    "host": args.host,
+                    "relative_dynamics_factor": args.dynamics,
+                    "multicast_group": GROUP,
+                    "created_utc": datetime.now(timezone.utc).isoformat(),
+                    "policy_dt_ms": 1000.0 / RATE_HZ,
+                    "rate_hz": RATE_HZ,
+                    "waypoints": POSITIONS,
+                    "pause_s": args.pause,
+                    "bad_packets": listener.bad,
+                    "cameras": [cam.name for cam in cameras],
+                }
+                save_h5(handle, records, metadata)
+            handle.close()
+            if records:
+                report(records, recorders, row)
 
 
-def report(records, path):
+def report(records, recorders, path):
     t = np.array([record["t"] for record in records])
     count = np.stack([record["count"] for record in records])
     age = np.stack([record["age_ms"] for record in records])
@@ -381,6 +575,18 @@ def report(records, path):
     slow = [f"{sim_name(*SENSORS[i])} {rates[i]:.1f} Hz" for i in np.flatnonzero(rates < RATE_HZ * 0.5)]
     if slow:
         print("sensors under half the tick rate: " + ", ".join(slow))
+    for rec in recorders:
+        number = np.array(rec.number)
+        if len(number) < 2:
+            print(f"{rec.cam.name}: {len(number)} frames")
+            continue
+        arrived = np.array(rec.arrived)
+        fps = (len(number) - 1) / max(arrived[-1] - arrived[0], 1e-9)
+        dropped = int(np.sum(np.diff(number) - 1))
+        ages = np.array([record[rec.cam.name][1] for record in records])
+        print(f"{rec.cam.name}: {len(number)} frames at {fps:.1f} fps (target {rec.cam.fps}), "
+              f"{dropped} dropped by the camera, write backlog max {rec.backlog}; "
+              f"{rec.ticks} tick frames, age median {np.median(ages):.0f} ms")
 
 
 def main():
@@ -393,19 +599,26 @@ def main():
                         help="seconds to wait for every sensor to report before moving")
     parser.add_argument("--allow-missing", action="store_true", help="record even if some sensors never report")
     parser.add_argument("--no-gripper", action="store_true", help="do not read the Franka Hand width")
+    parser.add_argument("--wrist-serial", default=None, help="serial of the wrist D435 (python cameras.py)")
+    parser.add_argument("--exo-serial", default=None, help="serial of the exocentric D435")
+    parser.add_argument("--no-cameras", action="store_true")
+    parser.add_argument("--cam-width", type=int, default=640)
+    parser.add_argument("--cam-height", type=int, default=480)
+    parser.add_argument("--cam-fps", type=int, default=30, help="camera rate; every frame is recorded")
+    parser.add_argument("--no-depth", action="store_true", help="do not store depth (~9 MB per second per camera)")
+    parser.add_argument("--rgb-h5", action="store_true", help="also store raw RGB of every frame in trajectory.h5")
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="HDF5 output path (default: recordings/<utc timestamp>.h5)",
+        help="row folder to create (default: recordings/<utc timestamp>/)",
     )
     args = parser.parse_args()
-    output = args.output
-    if output is None:
+    row = args.output
+    if row is None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        output = Path("recordings") / f"{stamp}.h5"
-    collect(args.host, args.dynamics, args.pause, args.warmup_timeout, args.tail,
-            not args.no_gripper, args.allow_missing, output)
+        row = Path("recordings") / stamp
+    collect(args, row)
 
 
 if __name__ == "__main__":

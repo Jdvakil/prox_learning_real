@@ -84,6 +84,7 @@ class RealSenseCamera(threading.Thread):
         self.frame = None            # (rgb (H, W, 3) uint8, depth (H, W) uint16 mm, frame number, device ms, arrival)
         self.count = 0
         self.error = None
+        self.sink = None             # callable(frame tuple), fed every frame (record_dataset.CameraRecorder)
         self.stop_event = threading.Event()
 
     def run(self):
@@ -111,9 +112,13 @@ class RealSenseCamera(threading.Thread):
                     depth_mm = np.array(raw, dtype=np.uint16, copy=True)
                 else:
                     depth_mm = np.clip(np.round(raw * (self.depth_scale * 1000.0)), 0, 65535).astype(np.uint16)
+                frame = (rgb, depth_mm, int(color.get_frame_number()), float(color.get_timestamp()), arrived)
                 with self.lock:
-                    self.frame = (rgb, depth_mm, int(color.get_frame_number()), float(color.get_timestamp()), arrived)
+                    self.frame = frame
                     self.count += 1
+                sink = self.sink
+                if sink is not None:
+                    sink(frame)
         except Exception as exc:     # surfaced by latest() / wait_ready()
             self.error = exc
 
