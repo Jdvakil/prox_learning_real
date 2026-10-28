@@ -14,7 +14,7 @@ LINKS = {
     "link5_large": 5008,
     "link6": 5009,
     "link4": 5010,
-    "end_effector": 5011,
+    #"end_effector": 5011,
 }
 
 SENSORS_PER_LINK = {
@@ -25,7 +25,7 @@ SENSORS_PER_LINK = {
     "link5_large": 6,
     "link6": 6,
     "link4": 5,
-    "end_effector": 1,
+    #"end_effector": 1,
 }
 
 NO_TARGET_MM = 4000
@@ -41,7 +41,7 @@ SIM_PREFIX = {
     "link5_small": "link5_front",
     "link5_large": "link5_back",
     "link6": "link6",
-    "end_effector": "link7_hand",
+    #"end_effector": "link7_hand",
 }
 
 
