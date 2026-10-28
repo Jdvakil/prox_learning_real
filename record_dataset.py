@@ -177,14 +177,8 @@ def read_robot_state(robot):
     }
 
 
-def sample(robot, listener, gripper, runner, t0):
-    now = time.monotonic()
-    record = read_robot_state(robot)
-    record["t"] = now - t0
-    record["wall_time"] = time.time()
-    record["phase"] = runner.phase
-    record["target_q"] = runner.positions[runner.phase]
-    record["gripper_width"] = gripper.width if gripper else float("nan")
+def sensor_arrays(listener, now):
+    """Newest packet of every sensor in SENSORS order: depth (S, 128) uint16, age ms, packet count."""
     packets = listener.snapshot()
     depth = np.full((len(SENSORS), 2 * ZONES * ZONES), NO_TARGET_MM, dtype=np.uint16)
     age = np.full(len(SENSORS), np.nan, dtype=np.float32)
@@ -193,8 +187,58 @@ def sample(robot, listener, gripper, runner, t0):
         if key in packets:
             depth[index], arrived, count[index] = packets[key]
             age[index] = (now - arrived) * 1000.0
-    record["depth_mm"], record["age_ms"], record["count"] = depth, age, count
+    return depth, age, count
+
+
+def wait_for_sensors(listener, timeout, allow_missing):
+    deadline = time.monotonic() + timeout
+    while listener.missing() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    missing = listener.missing()
+    if missing:
+        message = "no packets from: " + ", ".join(missing)
+        if not allow_missing:
+            raise TimeoutError(message + " (pass --allow-missing to record anyway)")
+        print("warning: " + message)
+
+
+def sample(robot, listener, gripper, runner, t0):
+    now = time.monotonic()
+    record = read_robot_state(robot)
+    record["t"] = now - t0
+    record["wall_time"] = time.time()
+    record["phase"] = runner.phase
+    record["target_q"] = runner.positions[runner.phase]
+    record["gripper_width"] = gripper.width if gripper else float("nan")
+    record["depth_mm"], record["age_ms"], record["count"] = sensor_arrays(listener, now)
     return record
+
+
+def write_sensors(traj, depth, age, count):
+    """obs/proximity/<sim name> (block 1 in m) and the raw packets under real/, for (T, S, 128) depth."""
+    T = len(depth)
+    proximity = traj.create_group("obs/proximity")
+    proximity.attrs["unit"] = "m"
+    proximity.attrs["no_target_m"] = NO_TARGET_M
+    proximity.attrs["source"] = "block 1 (confident zones) of the newest packet at each tick"
+    block1 = depth[:, :, : ZONES * ZONES].astype(np.float32) / 1000.0
+    block1[(block1 <= 0) | (block1 >= NO_TARGET_M)] = NO_TARGET_M
+    for index, (name, sensor_id) in enumerate(SENSORS):
+        proximity.create_dataset(sim_name(name, sensor_id),
+                                 data=block1[:, index].reshape(T, 1, ZONES, ZONES))
+
+    real = traj.require_group("real")
+    fresh = np.concatenate([count[:1] > 0, np.diff(count, axis=0) > 0])
+    real.create_dataset("sensor_names", data=np.array(
+        [sim_name(name, sensor_id) for name, sensor_id in SENSORS], dtype=h5py.string_dtype()))
+    real.create_dataset("sensor_link", data=np.array([name for name, _ in SENSORS], dtype=h5py.string_dtype()))
+    real.create_dataset("sensor_id", data=np.array([sensor_id for _, sensor_id in SENSORS], dtype=np.uint8))
+    real.create_dataset("depth_mm", data=depth.reshape(T, len(SENSORS), 2, ZONES, ZONES), compression="gzip")
+    real["depth_mm"].attrs["layout"] = "(tick, sensor, block, row, col); block 0 confident, block 1 with fills"
+    real.create_dataset("age_ms", data=age)
+    real["age_ms"].attrs["meaning"] = "time since the packet arrived; NaN = sensor never reported"
+    real.create_dataset("fresh", data=fresh)
+    real["fresh"].attrs["meaning"] = "a new packet arrived since the previous tick"
 
 
 def save_h5(path, records, metadata):
@@ -206,8 +250,6 @@ def save_h5(path, records, metadata):
     width = stack("gripper_width")
     finger = np.where(np.isfinite(width), width / 2.0, 0.0)
     finger_v = np.gradient(finger, stack("t")) if T > 1 else np.zeros(T)
-    depth, age, count = stack("depth_mm"), stack("age_ms"), stack("count")
-    fresh = np.concatenate([count[:1] > 0, np.diff(count, axis=0) > 0])
     translation, quat_xyzw = stack("translation"), stack("quaternion_xyzw")
 
     with h5py.File(path, "w") as handle:
@@ -230,15 +272,7 @@ def save_h5(path, records, metadata):
         extra.create_dataset("policy_phase", data=stack("phase").astype(np.int64))
         extra["policy_phase"].attrs["meaning"] = "index of the waypoint being executed"
 
-        proximity = traj.create_group("obs/proximity")
-        proximity.attrs["unit"] = "m"
-        proximity.attrs["no_target_m"] = NO_TARGET_M
-        proximity.attrs["source"] = "block 1 (confident zones) of the newest packet at each tick"
-        block1 = depth[:, :, : ZONES * ZONES].astype(np.float32) / 1000.0
-        block1[(block1 <= 0) | (block1 >= NO_TARGET_M)] = NO_TARGET_M
-        for index, (name, sensor_id) in enumerate(SENSORS):
-            proximity.create_dataset(sim_name(name, sensor_id),
-                                     data=block1[:, index].reshape(T, 1, ZONES, ZONES))
+        write_sensors(traj, stack("depth_mm"), stack("age_ms"), stack("count"))
 
         targets = stack("target_q")
         actions = traj.create_group("actions")
@@ -255,7 +289,7 @@ def save_h5(path, records, metadata):
         traj.create_dataset("terminated", data=terminated)
         traj.create_dataset("rewards", data=np.zeros(T, dtype=np.float32))
 
-        real = traj.create_group("real")
+        real = traj.require_group("real")
         real.create_dataset("t", data=stack("t"))
         real["t"].attrs["unit"] = "s since the first tick (monotonic clock)"
         real.create_dataset("wall_time", data=stack("wall_time"))
@@ -266,16 +300,6 @@ def save_h5(path, records, metadata):
         real.create_dataset("elbow", data=stack("elbow"))
         real.create_dataset("target_q", data=targets)
         real.create_dataset("gripper_width", data=width)
-        real.create_dataset("sensor_names", data=np.array(
-            [sim_name(name, sensor_id) for name, sensor_id in SENSORS], dtype=h5py.string_dtype()))
-        real.create_dataset("sensor_link", data=np.array([name for name, _ in SENSORS], dtype=h5py.string_dtype()))
-        real.create_dataset("sensor_id", data=np.array([sensor_id for _, sensor_id in SENSORS], dtype=np.uint8))
-        real.create_dataset("depth_mm", data=depth.reshape(T, len(SENSORS), 2, ZONES, ZONES), compression="gzip")
-        real["depth_mm"].attrs["layout"] = "(tick, sensor, block, row, col); block 0 confident, block 1 with fills"
-        real.create_dataset("age_ms", data=age)
-        real["age_ms"].attrs["meaning"] = "time since the packet arrived; NaN = sensor never reported"
-        real.create_dataset("fresh", data=fresh)
-        real["fresh"].attrs["meaning"] = "a new packet arrived since the previous tick"
     return path
 
 
@@ -288,16 +312,7 @@ def collect(host, dynamics, pause, warmup_timeout, tail, use_gripper, allow_miss
     gripper = None
     records = []
     try:
-        deadline = time.monotonic() + warmup_timeout
-        while listener.missing() and time.monotonic() < deadline:
-            time.sleep(0.05)
-        missing = listener.missing()
-        if missing:
-            message = "no packets from: " + ", ".join(missing)
-            if not allow_missing:
-                raise TimeoutError(message + " (pass --allow-missing to record anyway)")
-            print("warning: " + message)
-
+        wait_for_sensors(listener, warmup_timeout, allow_missing)
         robot = Robot(host)
         robot.recover_from_errors()
         robot.relative_dynamics_factor = dynamics

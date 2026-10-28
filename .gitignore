@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+dataset/
+sim_out/
+camera_check/
+MUJOCO_LOG.TXT
