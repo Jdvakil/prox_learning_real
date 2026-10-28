@@ -1,8 +1,9 @@
 """Proximity sensors on the arm.
 
-A packet's first byte is the sensor id on that link. The rest is a zone image:
-128 uint16 distances, laid out as 64 zones for the first target and 64 for the
-second. 4000 mm means that zone has no target. The ids below are the 41 sensors.
+Each link streams UDP multicast on its own port. A packet's first byte is the sensor id on
+that link; the rest is 128 uint16 distances in mm, two row-major 8x8 blocks. Block 1 holds
+only confident zones (4000 mm = no target); block 2 equals block 1 wherever block 1 is valid
+and fills the other zones with low-confidence ranges. 41 sensors in total.
 """
 
 LINKS = {
@@ -28,24 +29,21 @@ SENSORS_PER_LINK = {
 }
 
 NO_TARGET_MM = 4000
-ZONES_PER_SENSOR = 64
+
+# Camera prefix of each link in the sim model (prox_learning
+# assets/robots/franka_skin/model_hybrid_franka_hand.xml). Sensor id k on a link is taken to be
+# <prefix>_sensor_k. The counts match the arm; the id order has not been checked on the arm.
+SIM_PREFIX = {
+    "link1": "link1",
+    "link2": "link2",
+    "link3": "link3",
+    "link4": "link4",
+    "link5_small": "link5_front",
+    "link5_large": "link5_back",
+    "link6": "link6",
+    "end_effector": "link7_hand",
+}
 
 
-def zone_ranges(depth_mm):
-    """One distance per zone. None means that zone did not return a target."""
-    depths = list(depth_mm)
-    if len(depths) >= ZONES_PER_SENSOR * 2:
-        zones = []
-        for index in range(ZONES_PER_SENSOR):
-            candidates = (depths[index], depths[ZONES_PER_SENSOR + index])
-            hits = [value for value in candidates if 0 < value < NO_TARGET_MM]
-            zones.append(min(hits) if hits else None)
-        return zones
-    return [value if 0 < value < NO_TARGET_MM else None for value in depths]
-
-
-def nearest_mm(depth_mm):
-    hits = [value for value in zone_ranges(depth_mm) if value is not None]
-    if not hits:
-        return None
-    return min(hits)
+def sim_name(link, sensor_id):
+    return f"{SIM_PREFIX[link]}_sensor_{sensor_id}"
