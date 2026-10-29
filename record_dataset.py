@@ -217,7 +217,7 @@ class CameraRecorder(threading.Thread):
         self.cam, self.group = cam, group
         self.store_depth, self.store_rgb = store_depth, store_rgb
         self.queue = queue.Queue()
-        self.full = Mp4Writer(row / f"{cam.name}_30fps.mp4", cam.fps)
+        self.full = Mp4Writer(row / f"{cam.name}_15fps.mp4", cam.fps)
         self.episode = Mp4Writer(row / f"episode_00000000_{cam.name}.mp4", RATE_HZ)
         self.number, self.device_ms, self.arrived = [], [], []
         self.ticks = 0
@@ -289,7 +289,7 @@ class CameraRecorder(threading.Thread):
         for key, value in cam.intrinsics.items():
             group.attrs[key] = value
         group.attrs["serial"] = cam.serial
-        group.attrs["fps"] = cam.fps
+        group.attrs["fps"] = 15
         group.attrs["depth_scale_m"] = 0.001
         number = np.array(self.number, dtype=np.int64)
         group.create_dataset("frame_number", data=number)

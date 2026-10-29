@@ -1,11 +1,15 @@
-(franky) jaydv@verstappen:~/prox_learning_real$ python cameras.py 
+(franky) jaydv@verstappen:~/prox_learning_real$ python record_dataset.py --pause 0.5 --dynamics 0.05 --wrist-serial 836612071883
 Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/cameras.py", line 154, in <module>
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 625, in <module>
     main()
-  File "/home/jaydv/prox_learning_real/cameras.py", line 140, in main
-    cam.wait_ready(frames=30)
-  File "/home/jaydv/prox_learning_real/cameras.py", line 92, in wait_ready
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 621, in main
+    collect(args, row)
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 491, in collect
+    cameras = open_cameras(args)
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 469, in open_cameras
+    cam.wait_ready()
+  File "/home/jaydv/prox_learning_real/cameras.py", line 135, in wait_ready
     frame, count = self.latest()
-  File "/home/jaydv/prox_learning_real/cameras.py", line 84, in latest
+  File "/home/jaydv/prox_learning_real/cameras.py", line 127, in latest
     raise RuntimeError(f"{self.name} camera stopped: {self.error!r}")
-RuntimeError: 943222071556 camera stopped: RuntimeError("Frame didn't arrive within 2000")
+RuntimeError: wrist_camera camera stopped: RuntimeError('no frames from 836612071883 (USB 3.2); try a USB 3 port/cable, lower --fps/--width/--height, or --reset')
