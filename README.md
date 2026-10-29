@@ -73,6 +73,12 @@ logging), `--tail`, `--dynamics`, `--no-gripper`, `--output` (row folder), `--no
 `--cam-fps` (30), `--cam-width` / `--cam-height`, `--no-depth`, `--rgb-h5` (raw RGB of every
 frame in the h5, large). Gripper only read (width), not commanded.
 
+Cameras: on the robot PC a D435 gives no frames on a fresh start until it is USB power-cycled
+(2026-10-28: `cameras.py` and `record_dataset.py` both failed with "no frames" / "Frame didn't
+arrive" until `cameras.py --reset`). `record_dataset.py` and `kinesthetic.py replay` therefore
+reset the cameras they use before starting them (about 5 s), and if one still gives no frames
+they reset and retry once. `--no-camera-reset` skips the first reset.
+
 ## Sensors
 
 `sensor_layout.py` holds the ports, sensor counts and the mapping to the sim camera names.

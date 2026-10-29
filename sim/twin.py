@@ -607,14 +607,20 @@ def fake_realsense(phys: Physics, rig: CameraRig, serials: dict) -> types.Module
     ns = types.SimpleNamespace
     rs.stream = ns(color="color", depth="depth")
     rs.format = ns(rgb8="rgb8", bgr8="bgr8", z16="z16")
-    rs.camera_info = ns(serial_number="serial_number", name="name")
+    rs.camera_info = ns(serial_number="serial_number", name="name", usb_type_descriptor="usb_type_descriptor")
 
     class device:
         def __init__(self, serial):
             self.serial = serial
 
         def get_info(self, key):
-            return self.serial if key == "serial_number" else "Intel RealSense D435 (sim)"
+            return {"serial_number": self.serial, "usb_type_descriptor": "3.2"}.get(key, "Intel RealSense D435 (sim)")
+
+        def supports(self, key):
+            return key in ("serial_number", "name", "usb_type_descriptor")
+
+        def hardware_reset(self):
+            pass
 
         def first_depth_sensor(self):
             return ns(get_depth_scale=lambda: 0.001)
@@ -676,6 +682,14 @@ def fake_realsense(phys: Physics, rig: CameraRig, serials: dict) -> types.Module
             number = self.number
             return ns(get_color_frame=lambda: frame(rgb, number, stamp),
                       get_depth_frame=lambda: frame(depth, number, stamp))
+
+        def try_wait_for_frames(self, timeout_ms=5000):
+            try:
+                return True, self.wait_for_frames(timeout_ms)
+            except RuntimeError as exc:
+                if "within timeout" not in str(exc):
+                    raise
+                return False, None
 
         def stop(self):
             pass

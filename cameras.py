@@ -140,11 +140,41 @@ class RealSenseCamera(threading.Thread):
 
     def close(self):
         self.stop_event.set()
-        self.join(timeout=3.0)
+        if self.ident is not None:       # started
+            self.join(timeout=3.0)
         try:
             self.pipeline.stop()
         except RuntimeError:
             pass
+
+
+def start_cameras(specs, width=640, height=480, fps=30, reset=True):
+    """Open (name, serial) cameras and wait until each one streams.
+
+    On the robot PC a D435 often gives no frames on a fresh start until it is power-cycled
+    (python cameras.py failed the same way without --reset), so the cameras are reset first by
+    default. If one still gives no frames, all are reset and started once more.
+    """
+    serials = [serial for _, serial in specs]
+    for attempt in (0, 1):
+        if reset or attempt:
+            print(f"resetting cameras {', '.join(serials)}")
+            hardware_reset(serials)
+        cams = []
+        try:
+            for name, serial in specs:
+                cams.append(RealSenseCamera(name, serial, width, height, fps))
+            for cam in cams:
+                cam.start()
+            for cam in cams:
+                cam.wait_ready()
+            return cams
+        except BaseException as exc:
+            for cam in cams:
+                cam.close()
+            if attempt or not isinstance(exc, Exception):
+                raise
+            print(f"cameras did not stream ({exc}); resetting and retrying once")
 
 
 def save_png(path, image):

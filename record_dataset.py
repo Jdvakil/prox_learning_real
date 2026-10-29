@@ -454,24 +454,13 @@ def save_h5(handle, records, metadata):
 
 def open_cameras(args):
     """Start the wrist (required) and exocentric RealSense threads and wait for auto exposure."""
-    from cameras import RealSenseCamera
+    from cameras import start_cameras
 
     if not args.wrist_serial:
         raise SystemExit("--wrist-serial is required (python cameras.py lists the cameras), or pass --no-cameras")
-    cameras = []
-    try:
-        for name, serial in (("wrist_camera", args.wrist_serial), ("exo_camera_1", args.exo_serial)):
-            if serial:
-                cameras.append(RealSenseCamera(name, serial, args.cam_width, args.cam_height, args.cam_fps))
-        for cam in cameras:
-            cam.start()
-        for cam in cameras:
-            cam.wait_ready()
-    except BaseException:
-        for cam in cameras:
-            cam.close()
-        raise
-    return cameras
+    specs = [(name, serial) for name, serial in (("wrist_camera", args.wrist_serial), ("exo_camera_1", args.exo_serial))
+             if serial]
+    return start_cameras(specs, args.cam_width, args.cam_height, args.cam_fps, reset=not args.no_camera_reset)
 
 
 def collect(args, row):
@@ -602,6 +591,8 @@ def main():
     parser.add_argument("--wrist-serial", default=None, help="serial of the wrist D435 (python cameras.py)")
     parser.add_argument("--exo-serial", default=None, help="serial of the exocentric D435")
     parser.add_argument("--no-cameras", action="store_true")
+    parser.add_argument("--no-camera-reset", action="store_true",
+                        help="skip the USB power-cycle before the cameras start (still retried once on failure)")
     parser.add_argument("--cam-width", type=int, default=640)
     parser.add_argument("--cam-height", type=int, default=480)
     parser.add_argument("--cam-fps", type=int, default=30, help="camera rate; every frame is recorded")
