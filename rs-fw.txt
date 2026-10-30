@@ -1,0 +1,3 @@
+ 30/10 12:57:55,617 ERROR [135378615063104] (context.cpp:41) No valid configuration file found at : /home/jaydv/.realsense-config.json loading defaults
+
+There are no connected devices
