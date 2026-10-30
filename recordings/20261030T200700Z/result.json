@@ -1,4 +1,0 @@
-{
-  "clean_success": false,
-  "error": "ControlException('Motion finished commanded, but the robot is still moving! [\"joint_motion_generator_velocity_discontinuity\", \"joint_motion_generator_acceleration_discontinuity\"]\\ncontrol_command_success_rate: 1')"
-}

@@ -1,0 +1,6 @@
+(base) jaydv@verstappen:~/prox_learning_real$ uname -a 
+Linux verstappen 6.8.0-rt8+ #3 SMP PREEMPT_RT Fri Oct  3 14:58:34 MDT 2025 x86_64 x86_64 x86_64 GNU/Linux
+(base) jaydv@verstappen:~/prox_learning_real$ ulimit -r
+99
+(base) jaydv@verstappen:~/prox_learning_real$ 
+

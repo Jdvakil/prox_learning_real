@@ -1,4 +1,0 @@
-{
-  "clean_success": false,
-  "error": "ControlException('libfranka: Move command aborted: motion aborted by reflex! [\"joint_motion_generator_velocity_discontinuity\", \"joint_motion_generator_acceleration_discontinuity\"]\\ncontrol_command_success_rate: 0.698286 packets lost in a row in the last sample: 6')"
-}
