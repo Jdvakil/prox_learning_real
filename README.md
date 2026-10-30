@@ -126,6 +126,8 @@ Before touching hardware, every plan is checked against FR3 joint limits and con
 reference speed, acceleration and perturbation bounds. These checks do not test collisions;
 both the reference and the reset path need a clear workspace. Tracking errors, camera stalls
 and recording failures abort the batch and mark the partial row `clean_success: false`.
+Recording ends while the tracker still holds B; cameras are finalized before controller
+shutdown, so the damping-only shutdown motion is excluded from training episodes.
 
 Each batch contains `config.json` and `episode_0000/`, `episode_0001/`, etc. Each episode
 has the usual `trajectory.h5`, camera videos and `result.json`, plus `reference_plan.npz`.

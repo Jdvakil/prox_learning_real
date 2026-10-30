@@ -95,6 +95,7 @@ class ReferenceRunner(threading.Thread):
         self.robot, self.plan, self.args, self.control_cpus = robot, plan, args, control_cpus
         self.lock = threading.Lock()
         self.abort, self.done = threading.Event(), threading.Event()
+        self.capture_complete = threading.Event()
         self.error = None
         self.reference = (plan.start.copy(), np.zeros(7), plan.start.copy(), np.zeros(7), 0.0)
         self.commands = []
@@ -128,8 +129,12 @@ class ReferenceRunner(threading.Thread):
                     if now - start >= self.plan.duration + self.args.tail:
                         if error > self.args.goal_tolerance:
                             raise RuntimeError(f"goal error {error:.4f} rad > {self.args.goal_tolerance}")
-                        return
-                raise RuntimeError("episode aborted")
+                        # Keep holding B until the logger closes the episode. Leaving
+                        # the tracker context starts a damping-only shutdown, during
+                        # which the arm can move and the old reference is no longer active.
+                        self.capture_complete.set()
+                if not self.capture_complete.is_set():
+                    raise RuntimeError("episode aborted")
         except BaseException as exc:
             self.error = exc
         finally:
@@ -151,7 +156,10 @@ def sample(robot, listener, runner, recorders, t0):
     # active command, not a separately recomputed future or final-goal reference.
     with runner.lock:
         q, dq, nominal, noise, clock = runner.reference
-        record = base.sample(robot, listener, None,
+        # Freeze packets before base.sample timestamps the observation: receiving
+        # a packet during robot-state reads otherwise produces negative packet ages.
+        packets = listener.snapshot()
+        record = base.sample(robot, SimpleNamespace(snapshot=lambda: packets), None,
                              SimpleNamespace(phase=0, positions=[q]), recorders, t0)
         record.update(dq_ref=dq.copy(), nominal_q=nominal.copy(), noise_q=noise.copy(), clock=clock)
     for rec in recorders:
@@ -216,6 +224,17 @@ def collect_episode(robot, listener, cameras, plan, args, row, control_cpus):
                 rec = base.CameraRecorder(cam, group, row, not args.no_depth, args.rgb_h5)
                 rec.begin()
                 recorders.append(rec)
+            # Ensure every camera has a stored depth frame before the first RGB
+            # tick. Otherwise tick_frame=0 can refer to a later, different image.
+            deadline = time.monotonic() + 10
+            while any(not rec.number for rec in recorders):
+                for rec in recorders:
+                    if rec.error is not None:
+                        raise RuntimeError(f"{rec.cam.name}: recorder failed: {rec.error}")
+                    rec.cam.latest()
+                if time.monotonic() > deadline:
+                    raise RuntimeError("camera recorders did not receive initial frames")
+                time.sleep(0.01)
             t0 = time.monotonic()
             tick = 0
             while True:
@@ -229,6 +248,8 @@ def collect_episode(robot, listener, cameras, plan, args, row, control_cpus):
                     if runner.error is not None:
                         raise RuntimeError(f"reference motion failed: {runner.error}") from runner.error
                     break
+                if runner.capture_complete.is_set():
+                    break
                 tick = max(tick + 1, int((time.monotonic() - t0) * base.RATE_HZ) + 1)
                 time.sleep(max(0, t0 + tick / base.RATE_HZ - time.monotonic()))
         except BaseException as exc:
@@ -237,13 +258,17 @@ def collect_episode(robot, listener, cameras, plan, args, row, control_cpus):
         finally:
             try:
                 try:
-                    runner.stop()
-                except BaseException as exc:
-                    failure = failure or exc
-                for rec in recorders:
-                    rec.finish()
-                    if rec.error is not None and failure is None:
-                        failure = RuntimeError(f"{rec.cam.name}: recorder failed: {rec.error}")
+                    for rec in recorders:
+                        rec.finish()
+                        if rec.error is not None and failure is None:
+                            failure = RuntimeError(f"{rec.cam.name}: recorder failed: {rec.error}")
+                finally:
+                    try:
+                        runner.stop()
+                    except BaseException as exc:
+                        failure = failure or exc
+                    if runner.error is not None and failure is None:
+                        failure = runner.error
                 if records:
                     write_episode(handle, records, runner, args, plan, recorders, t0, failure)
             except BaseException as exc:

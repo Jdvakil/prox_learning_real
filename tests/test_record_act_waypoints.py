@@ -80,7 +80,10 @@ class MockRobotTests(unittest.TestCase):
                 return self
 
             def __exit__(self, *args):
-                pass
+                # Real tracker shutdown takes time and releases the position hold.
+                # Those observations must never enter a successful training row.
+                self.robot.state.q = np.array(act.GOAL) + 0.3
+                act.time.sleep(0.15)
 
             def tick(self):
                 # Production tracker paces at 100 Hz; use a shorter test interval.
@@ -126,6 +129,8 @@ class MockRobotTests(unittest.TestCase):
                     self.assertTrue(np.any(np.all(control == action, axis=1)))
                 self.assertTrue(traj["success"][-1])
                 self.assertFalse(np.any(traj["fail"][:]))
+                np.testing.assert_allclose(traj["real/q"][-1], plan.goal)
+                self.assertLess(np.abs(traj["real/q"][:] - q_ref).max(), 0.02)
 
     def test_tracker_failure_is_reported(self):
         args = act.parse_args(["--dry-run"])
