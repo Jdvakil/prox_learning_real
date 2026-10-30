@@ -1,3 +1,4 @@
- 30/10 12:57:55,617 ERROR [135378615063104] (context.cpp:41) No valid configuration file found at : /home/jaydv/.realsense-config.json loading defaults
 
-There are no connected devices
+Connected devices:
+1) [USB] Intel RealSense D435 s/n 836612071883, update serial number: 839313021285, firmware version: 5.17.0.9
+2) [USB] Intel RealSense D435I s/n 943222071556, update serial number: 926623051165, firmware version: 5.17.0.10
