@@ -88,6 +88,50 @@ logging), `--tail`, `--dynamics`, `--no-gripper`, `--output` (row folder), `--no
 `--cam-fps` (30), `--cam-width` / `--cam-height`, `--no-depth`, `--rgb-h5` (raw RGB of every
 frame in the h5, large). Gripper only read (width), not commanded.
 
+### Simple start-to-goal ACT smoke test
+
+`record_act_waypoints.py` records one A -> B motion per row, with the reset to A outside
+the recording. It defaults to two episodes with the same start and goal; each seed produces
+a different smooth perturbation of the path. Review `START` / `GOAL` in the script for the
+workspace, or supply seven joint angles in radians using `--start` / `--goal`.
+
+```bash
+# Validate and save the 20 reference plans without connecting to any hardware:
+python record_act_waypoints.py --dry-run --episodes 20 --output /tmp/act_plans
+
+# Collect two episodes first (default); change to --episodes 20 for the batch:
+python record_act_waypoints.py --episodes 2 --seed 0 \
+  --wrist-serial <serial1> --exo-serial <serial2> --output recordings/act_smoke
+```
+
+The default motion takes 8 seconds, with 1 second of lead-in and 1 second holding B.
+A minimum-jerk reference runs through the joint impedance tracker at 100 Hz; observations
+and ACT action labels are sampled at 15 Hz. Actions contain the actual noisy absolute joint
+reference active at that observation, not the final waypoint. The gripper is opened once
+and held open; `--no-gripper` skips opening/reading and requires it to be kept open manually.
+Each row can be processed by the existing ACT converter using the usual camera names.
+Repeat `--camera NAME SERIAL` for more cameras; the converter's supported camera names
+still apply. RGB-D/proximity storage flags match `record_dataset.py`.
+
+`--noise-std 0.01` is the Gaussian coefficient scale in radians for three low-frequency sine
+modes per joint. A smooth envelope makes perturbation, velocity and acceleration zero at
+the endpoints. This adds variation to executed commands and observations. Set it to 0 for
+the deterministic baseline. Episode seeds are `--seed + episode index`; use a different
+base seed for another batch. The noisy references are the training targets, so this smoke
+test learns the perturbed demonstration distribution, not a clean expert correction policy.
+
+Before touching hardware, every plan is checked against FR3 joint limits and configurable
+reference speed, acceleration and perturbation bounds. These checks do not test collisions;
+both the reference and the reset path need a clear workspace. Tracking errors, camera stalls
+and recording failures abort the batch and mark the partial row `clean_success: false`.
+
+Each batch contains `config.json` and `episode_0000/`, `episode_0001/`, etc. Each episode
+has the usual `trajectory.h5`, camera videos and `result.json`, plus `reference_plan.npz`.
+HDF5 extras include `real/nominal_q`, `real/noise_q`, `real/dq_ref`, `real/clock`, the noise
+coefficients, and `real/control/{t,q_ref,dq_ref}` for every reference actually sent at 100 Hz.
+`actions/joint_pos` and `real/target_q` contain the corresponding 15 Hz references. No action
+time shift is applied here; account for any shift performed by the training loader.
+
 Cameras: on the robot PC a D435 gives no frames on a fresh start until it is USB power-cycled
 (2026-10-28: `cameras.py` and `record_dataset.py` both failed with "no frames" / "Frame didn't
 arrive" until `cameras.py --reset`). `record_dataset.py` and `kinesthetic.py replay` therefore
@@ -116,3 +160,7 @@ zones (4000 = no target), block 2 = block 1 plus low-confidence fills.
 
 In the prox_learning repo: `python scripts/real_skin_viz.py <recording or row>/trajectory.h5`
 writes a 3D replay (skin model moving as recorded, zones projected from each sensor).
+
+Dashboard: `python dashboard_row.py recordings/<utc stamp>` writes `viz/<utc stamp>_dashboard.html`, one
+offline file: pass/warn tiles (blocked camera check included), synced camera and sensor replay, joint
+position and velocity, nearest return per link, packet rates and stuck zones. Needs h5py, numpy, opencv.

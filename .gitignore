@@ -4,3 +4,4 @@ dataset/
 sim_out/
 camera_check/
 MUJOCO_LOG.TXT
+viz/

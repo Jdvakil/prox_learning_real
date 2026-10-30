@@ -1,0 +1,326 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skin recording {{ROW}}</title><style>:root{color-scheme:dark;--color-fg:#e8ecf1;--color-fg-muted:#98a3b1;--color-bg:#0f1318;--color-panel:#171d24;--color-border-line:#2c3540;--color-ok:#5fd38d;--color-warn:#f0b354;--color-bad:#f27272;
+--font-anthropic-sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--font-anthropic-serif:Georgia,'Times New Roman',serif;
+--cds-font-size-caption:12px;--cds-font-size-body:15px;--cds-font-size-heading:17px;--cds-font-size-title:30px;--cds-font-weight-medium:600;
+--cds-gap-xs:4px;--cds-gap-sm:8px;--cds-gap-md:14px;--cds-gap-xl:30px;--cds-pad-xs:4px;--cds-pad-sm:8px;--cds-pad-lg:16px;--cds-radius:6px;
+--cds-chart-grid:#2c3540;--cds-chart-reference:#c9d2dc;--cds-surface-popover:#222a33;--cds-border:#3a4552;--cds-shadow-popover:0 4px 14px #0008;--cds-text-secondary:#98a3b1}
+body{margin:0;background:var(--color-bg);color:var(--color-fg)}#dash-root{max-width:1500px;margin:auto;padding:24px max(16px,3vw)}</style><style>
+.sk{display:grid;gap:var(--cds-gap-xl);font-family:var(--font-anthropic-sans);min-width:0}
+.sk-probe{display:none}
+.sk-head h1{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);margin:0;text-wrap:balance;overflow-wrap:anywhere}
+.sk-head p{margin:var(--cds-gap-xs) 0 0;color:var(--color-fg-muted);font-size:var(--cds-font-size-body);max-width:72ch}
+.sk-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10.5rem),1fr));gap:var(--cds-gap-md)}
+.sk-tile,.sk-card{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);min-width:0}
+.sk-tile{display:grid;gap:var(--cds-gap-xs);align-content:start}
+.sk-tile .lab{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.sk .num{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);font-variant-numeric:tabular-nums}
+.sk-tile .unit{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.sk-pill{display:inline-flex;align-items:center;gap:.35em;font-size:var(--cds-font-size-caption)}
+.sk-pill.ok{color:var(--color-ok)}.sk-pill.warn{color:var(--color-warn)}.sk-pill.bad{color:var(--color-bad)}
+.sk-sec{display:grid;gap:var(--cds-gap-md);min-width:0}
+.sk-sec>h2,.sk-card h3{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium);margin:0}
+.sk-note{margin:var(--cds-gap-xs) 0 var(--cds-gap-md);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);max-width:75ch}
+.sk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr));gap:var(--cds-gap-md)}
+.sk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--cds-gap-sm) var(--cds-gap-md);margin-bottom:var(--cds-gap-md)}
+.sk-btn{font:inherit;font-size:var(--cds-font-size-caption);padding:var(--cds-pad-xs) var(--cds-pad-sm);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-bg);color:var(--color-fg);cursor:pointer}
+.sk-btn[aria-pressed=true]{border-color:var(--color-fg)}
+.sk-scrub{flex:1 1 12rem;min-width:0;display:flex}.sk-scrub input{width:100%;margin:0}
+.sk-time{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);font-variant-numeric:tabular-nums}
+.sk-stage{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,26rem),1fr));gap:var(--cds-gap-md);align-items:start}
+.sk-cams{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--cds-gap-sm)}
+.sk-cams figure{margin:0;min-width:0}
+.sk-cams figcaption{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);margin-top:.25rem}
+.sk-img{aspect-ratio:4/3;max-width:100%;background:var(--color-bg);border-radius:var(--cds-radius);overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--color-fg-muted)}
+.sk-img img{width:100%;height:100%;object-fit:cover;display:block}
+.sk-mosaic,.sk-chart{position:relative;min-width:0}
+.sk-mosaic canvas{display:block;width:100%}
+.sk-chart{min-height:230px}.sk-chart.bars{min-height:0}
+.sk-chart svg{display:block;overflow:visible}
+.sk-chart text{fill:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.sk-tip{position:absolute;pointer-events:none;z-index:3;background:var(--cds-surface-popover);border:1px solid var(--cds-border);border-radius:var(--cds-radius);box-shadow:var(--cds-shadow-popover);padding:var(--cds-pad-xs) var(--cds-pad-sm);font-size:var(--cds-font-size-caption);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sk-tip div{display:flex;gap:.4em;align-items:center}.sk-tip i{width:.6em;height:.6em;border-radius:50%;display:inline-block}
+.sk-tip .h{color:var(--cds-text-secondary)}
+.sk-leg{display:flex;flex-wrap:wrap;gap:.25rem var(--cds-gap-md);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);margin-top:var(--cds-gap-xs)}
+.sk-leg span{display:inline-flex;gap:.35em;align-items:center}.sk-leg i{width:.7em;height:.7em;border-radius:50%}
+.sk-ramp{display:inline-block;width:6rem;height:.6rem;border-radius:var(--cds-radius);vertical-align:middle}
+.sk-tablewrap{max-height:26rem;overflow:auto}
+.sk-table{width:100%;border-collapse:collapse;font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.sk-table th{position:sticky;top:0;background:var(--color-panel);text-align:right;padding:0;border-bottom:1px solid var(--color-border-line)}
+.sk-table th:first-child,.sk-table td:first-child,.sk-table th:nth-child(2),.sk-table td:nth-child(2){text-align:left}
+.sk-table th button{font:inherit;font-weight:var(--cds-font-weight-medium);background:none;border:0;color:var(--color-fg);cursor:pointer;padding:var(--cds-pad-xs) var(--cds-pad-sm);white-space:nowrap}
+.sk-table td{padding:var(--cds-pad-xs) var(--cds-pad-sm);text-align:right;border-bottom:1px solid var(--color-border-line)}
+.sk-table tr.stuck td:last-child{color:var(--color-bad)}
+.sk-search{font:inherit;font-size:var(--cds-font-size-caption);padding:var(--cds-pad-xs) var(--cds-pad-sm);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-bg);color:var(--color-fg);margin-bottom:var(--cds-gap-sm);max-width:100%}
+.sk :is(button,input):focus-visible{outline:2px solid var(--color-fg);outline-offset:1px}
+</style>
+<script>{{D3}}</script><script>window.DATA={{DATA}};
+window.dash=(()=>{const fns={};const run=n=>document.querySelectorAll('[data-draw="'+n+'"]').forEach(e=>fns[n](e));
+return{colors:['#6cb6ff','#f2a65a','#7ee0a1','#e58fd8','#f4d35e','#ff7b72','#a6a6ff','#5fd4d4'],data:i=>({status:'ok',data:DATA[i]}),
+draw(n,f){if(f)fns[n]=f;else run(n);},_all(){Object.keys(fns).forEach(run);}};})();</script></head><body><div id="dash-root"><div class="sk">
+  <span class="sk-probe"></span>
+  <header class="sk-head" id="top">
+    <h1>Skin recording {{ROW}}</h1>
+    <p>{{TAKEAWAY}}</p>
+  </header>
+
+  <div class="sk-tiles">{{TILES}}</div>
+
+  <section class="sk-sec" id="replay">
+    <h2>Replay</h2>
+    <div class="sk-card">
+      <div class="sk-bar">
+        <button class="sk-btn" type="button" id="sk-play"><span class="sk-play-on">Play</span><span class="sk-play-off" hidden>Pause</span></button>
+        <div class="sk-scrub" data-draw="scrub" data-source="kinematics">—</div>
+        <span class="sk-time"><span data-draw="clock" data-source="kinematics">—</span> s, waypoint <span data-draw="phase" data-source="kinematics">—</span></span>
+        <button class="sk-btn sk-block" type="button" id="sk-b1" data-block="b1" aria-pressed="true">Confident zones</button>
+        <button class="sk-btn sk-block" type="button" id="sk-b2" data-block="b2" aria-pressed="false">With fills</button>
+      </div>
+      <div class="sk-stage">
+        <div class="sk-cams">{{CAMERAS}}</div>
+        <div>
+          <div class="sk-mosaic" data-draw="mosaic" data-source="zones sensors">—</div>
+          <p class="sk-note">Each tile is one 8x8 sensor, one row per link. Darker means nearer, from 0 to <span data-draw="far">—</span> mm <span class="sk-ramp" data-draw="ramp"></span>. A green frame means a new packet at this tick; no frame means the last packet repeated. Hover for a zone's reading. Camera frames show every fourth tick.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sk-sec" id="robot">
+    <h2>Robot motion</h2>
+    <div class="sk-grid">
+      <div class="sk-card"><h3>Joint position</h3><p class="sk-note">Radians. Shaded bands mark the waypoints.</p><div class="sk-chart" data-draw="line" data-kind="q" data-source="kinematics"></div><div class="sk-leg" data-draw="legend" data-kind="q">—</div></div>
+      <div class="sk-card"><h3>Joint velocity</h3><p class="sk-note">Radians per second. Hover any chart to move the replay.</p><div class="sk-chart" data-draw="line" data-kind="v" data-source="kinematics"></div><div class="sk-leg" data-draw="legend" data-kind="v">—</div></div>
+    </div>
+    <div class="sk-card"><h3>Nearest confident reading per link</h3><p class="sk-note">Metres. Gaps mean no confident return on that link at that tick.</p><div class="sk-chart" data-draw="line" data-kind="near" data-source="kinematics"></div><div class="sk-leg" data-draw="legend" data-kind="near">—</div></div>
+  </section>
+
+  <section class="sk-sec" id="sensors">
+    <h2>Sensor health</h2>
+    <div class="sk-grid">
+      <div class="sk-card"><h3>New packets per link</h3><p class="sk-note">Hz, counted from ticks that saw a new packet, so the true rate may be higher. The dashed line is the 15 Hz log rate.</p><div class="sk-chart bars" data-draw="rates" data-source="links"></div></div>
+      <div class="sk-card"><h3>Sensors with stuck zones</h3><p class="sk-note">Zones valid on over 90% of ticks with a median under 100 mm. Most likely the sensor sees the robot or its own mount.</p><div class="sk-chart bars" data-draw="stuck" data-source="sensors"></div></div>
+    </div>
+    <div class="sk-card">
+      <h3>All sensors</h3>
+      <p class="sk-note">Block 1 values. Noise is the median change between consecutive packets. Select a heading to sort.</p>
+      <input class="sk-search" id="sk-search" type="search" placeholder="Filter sensors" aria-label="Filter sensors">
+      <div class="sk-tablewrap">
+        <table class="sk-table" data-source="sensors" data-row-key="sensor">
+          <thead><tr>
+            <th data-field="sensor"><button type="button" data-sort="sensor">Sensor</button></th>
+            <th data-field="link"><button type="button" data-sort="link">Link</button></th>
+            <th data-field="valid_pct"><button type="button" data-sort="valid_pct">Valid %</button></th>
+            <th data-field="rate_hz"><button type="button" data-sort="rate_hz">Rate Hz</button></th>
+            <th data-field="age_ms"><button type="button" data-sort="age_ms">Age ms</button></th>
+            <th data-field="median_mm"><button type="button" data-sort="median_mm">Median mm</button></th>
+            <th data-field="noise_mm"><button type="button" data-sort="noise_mm">Noise mm</button></th>
+            <th data-field="stuck_zones"><button type="button" data-sort="stuck_zones">Stuck zones</button></th>
+          </tr></thead>
+          <tbody data-draw="sensorRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+const FAR_MM = 2000, LOG_HZ = 15, FRAME_STEP = {{FRAME_STEP}}, NO_TARGET_MM = 4000;
+const state = {tick: 0, block: 'b1', timer: null, sort: 'stuck_zones', desc: true, query: '', cursors: {}};
+const rowsOf = (id) => { const d = dash.data(id); return d.status === 'ok' ? d.data : null; };
+const redrawTick = () => { ['clock', 'phase', 'cam', 'mosaic', 'scrub'].forEach((n) => dash.draw(n)); Object.values(state.cursors).forEach((f) => f()); };
+const setTick = (i) => { state.tick = i; redrawTick(); };
+const stop = () => { clearInterval(state.timer); state.timer = null;
+  document.querySelectorAll('.sk-play-on').forEach((e) => { e.hidden = false; });
+  document.querySelectorAll('.sk-play-off').forEach((e) => { e.hidden = true; }); };
+document.querySelectorAll('#sk-play').forEach((b) => b.addEventListener('click', () => {
+  if (state.timer) { stop(); return; }
+  const rows = rowsOf('kinematics'); if (!rows) return;
+  if (state.tick >= rows.length - 1) state.tick = 0;
+  document.querySelectorAll('.sk-play-on').forEach((e) => { e.hidden = true; });
+  document.querySelectorAll('.sk-play-off').forEach((e) => { e.hidden = false; });
+  state.timer = setInterval(() => { if (state.tick >= rows.length - 1) { stop(); return; } setTick(state.tick + 1); }, 1000 / LOG_HZ);
+}));
+document.querySelectorAll('.sk-block').forEach((b) => b.addEventListener('click', () => {
+  state.block = b.dataset.block;
+  document.querySelectorAll('.sk-block').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+  dash.draw('mosaic');
+}));
+document.querySelectorAll('#sk-search').forEach((s) => s.addEventListener('input', () => { state.query = s.value.toLowerCase(); dash.draw('sensorRows'); }));
+document.querySelectorAll('[data-sort]').forEach((b) => b.addEventListener('click', () => {
+  const key = b.dataset.sort; state.desc = state.sort === key ? !state.desc : key !== 'sensor' && key !== 'link'; state.sort = key;
+  document.querySelectorAll('[data-sort]').forEach((o) => o.parentElement.removeAttribute('aria-sort'));
+  b.parentElement.setAttribute('aria-sort', state.desc ? 'descending' : 'ascending');
+  dash.draw('sensorRows');
+}));
+
+const resolve = (c) => { const probe = document.querySelector('.sk-probe'); if (!probe) return c; probe.style.color = c; return getComputedStyle(probe).color; };
+
+dash.draw('far', (el) => { el.textContent = String(FAR_MM); });
+dash.draw('ramp', (el) => { el.style.background = `linear-gradient(to left, ${resolve(dash.colors[0])}, transparent)`; });
+dash.draw('clock', (el) => { const r = rowsOf('kinematics'); el.textContent = r ? r[state.tick].t.toFixed(2) : '—'; });
+dash.draw('phase', (el) => { const r = rowsOf('kinematics'); el.textContent = r ? String(r[state.tick].phase) : '—'; });
+dash.draw('scrub', (el) => {
+  const r = rowsOf('kinematics');
+  if (!r) { el.textContent = '—'; return; }
+  let input = el.querySelector('input');
+  if (!input) {
+    input = document.createElement('input'); input.type = 'range'; input.min = 0; input.id = 'sk-scrub-range'; input.setAttribute('aria-label', 'Recording time');
+    input.addEventListener('input', () => { stop(); setTick(Number(input.value)); });
+    el.replaceChildren(input);
+  }
+  input.max = r.length - 1; input.value = state.tick;
+});
+dash.draw('cam', (el) => {
+  const r = rowsOf('frames');
+  if (!r) { el.textContent = '—'; return; }
+  const row = r[Math.min(Math.round(state.tick / FRAME_STEP), r.length - 1)];
+  const src = row[el.dataset.cam];
+  if (typeof src !== 'string' || !src.startsWith('data:image/')) { el.textContent = '—'; return; }
+  let img = el.querySelector('img');
+  if (!img) { img = document.createElement('img'); img.alt = el.dataset.cam.replace('_', ' '); el.replaceChildren(img); }
+  img.src = src;
+});
+
+const decoded = new Map();
+const zonesAt = (row, block) => {
+  const key = block + row.tick;
+  if (!decoded.has(key)) {
+    const raw = atob(row[block]); const out = new Uint16Array(raw.length / 2);
+    for (let i = 0; i < out.length; i += 1) out[i] = raw.charCodeAt(2 * i) | (raw.charCodeAt(2 * i + 1) << 8);
+    decoded.set(key, out);
+  }
+  return decoded.get(key);
+};
+dash.draw('mosaic', (el) => {
+  const z = rowsOf('zones'), s = rowsOf('sensors');
+  if (!z || !s) { el.textContent = '—'; return; }
+  let canvas = el.querySelector('canvas'), tip = el.querySelector('.sk-tip');
+  if (!canvas) {
+    canvas = document.createElement('canvas'); tip = document.createElement('div'); tip.className = 'sk-tip'; tip.hidden = true;
+    el.replaceChildren(canvas, tip);
+    canvas.addEventListener('pointerleave', () => { tip.hidden = true; });
+    canvas.addEventListener('pointermove', (e) => {
+      const g = canvas._geo; if (!g) return;
+      const box = canvas.getBoundingClientRect(); const px = e.clientX - box.left, py = e.clientY - box.top;
+      const hit = g.tiles.find((t) => px >= t.x && px < t.x + g.size && py >= t.y && py < t.y + g.size);
+      if (!hit) { tip.hidden = true; return; }
+      const zx = Math.min(7, Math.floor((px - hit.x) / (g.size / 8))), zy = Math.min(7, Math.floor((py - hit.y) / (g.size / 8)));
+      const data = zonesAt(rowsOf('zones')[state.tick], state.block); const v = data[hit.i * 64 + zy * 8 + zx];
+      tip.replaceChildren(); const a = document.createElement('div'); a.className = 'h'; a.textContent = `${hit.name}, zone ${zy * 8 + zx}`;
+      const b = document.createElement('div'); b.textContent = v > 0 && v < NO_TARGET_MM ? `${v} mm` : 'No target'; tip.append(a, b); tip.hidden = false;
+      tip.style.left = `${Math.max(0, Math.min(px + 10, box.width - tip.offsetWidth))}px`; tip.style.top = `${Math.max(0, py - tip.offsetHeight - 8)}px`;
+    });
+  }
+  const links = [...new Set(s.map((r) => r.link))].sort();
+  const cols = d3.max(links, (l) => s.filter((r) => r.link === l).length);
+  const W = el.clientWidth, labelW = W < 420 ? 0 : 76, gap = 4, labelH = labelW ? 0 : 13;
+  const size = Math.max(14, Math.min(64, Math.floor((W - labelW - gap * (cols - 1)) / cols)));
+  const H = links.length * (size + gap + labelH);
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = W * ratio; canvas.height = H * ratio; canvas.style.height = `${H}px`;
+  const c = canvas.getContext('2d'); c.setTransform(ratio, 0, 0, ratio, 0, 0); c.clearRect(0, 0, W, H);
+  const accent = resolve(dash.colors[0]), blank = resolve('var(--color-border-line)'), ok = resolve('var(--color-ok)'), ink = resolve('var(--color-fg-muted)');
+  const row = z[state.tick], data = zonesAt(row, state.block), cell = size / 8, tiles = [];
+  c.font = '11px sans-serif'; c.textBaseline = 'middle';
+  links.forEach((link, ly) => {
+    const y = ly * (size + gap + labelH) + labelH;
+    c.fillStyle = ink; c.globalAlpha = 1;
+    if (labelW) c.fillText(link, 0, y + size / 2); else c.fillText(link, 0, y - 6);
+    s.filter((r) => r.link === link).forEach((r, x) => {
+      const tx = labelW + x * (size + gap); tiles.push({i: r.index, name: r.sensor, x: tx, y});
+      for (let zy = 0; zy < 8; zy += 1) for (let zx = 0; zx < 8; zx += 1) {
+        const v = data[r.index * 64 + zy * 8 + zx];
+        if (v > 0 && v < NO_TARGET_MM) { c.fillStyle = accent; c.globalAlpha = 0.12 + 0.88 * (1 - Math.min(v, FAR_MM) / FAR_MM); } else { c.fillStyle = blank; c.globalAlpha = 0.35; }
+        c.fillRect(tx + zx * cell, y + zy * cell, Math.ceil(cell), Math.ceil(cell));
+      }
+      c.globalAlpha = 1;
+      if (row.fresh[r.index] === '1') { c.strokeStyle = ok; c.lineWidth = 1.5; c.strokeRect(tx + 0.75, y + 0.75, size - 1.5, size - 1.5); }
+    });
+  });
+  canvas._geo = {tiles, size};
+});
+
+const SERIES = {
+  q: [1, 2, 3, 4, 5, 6, 7].map((i) => ({key: `q${i}`, label: `Joint ${i}`})),
+  v: [1, 2, 3, 4, 5, 6, 7].map((i) => ({key: `v${i}`, label: `Joint ${i}`})),
+};
+const seriesFor = (kind, rows) => (SERIES[kind] || Object.keys(rows[0]).filter((k) => k.startsWith('near_')).map((k) => ({key: k, label: k.slice(5)})));
+const showTip = (tip, box, x, y, head, lines) => {
+  tip.replaceChildren(); const h = document.createElement('div'); h.className = 'h'; h.textContent = head; tip.append(h);
+  lines.forEach((l) => { const d = document.createElement('div'); if (l.color) { const i = document.createElement('i'); i.style.background = l.color; d.append(i); } d.append(l.text); tip.append(d); });
+  tip.hidden = false;
+  tip.style.left = `${Math.max(0, Math.min(x + 12, box.clientWidth - tip.offsetWidth))}px`;
+  tip.style.top = `${Math.max(0, Math.min(y, box.clientHeight - tip.offsetHeight))}px`;
+};
+dash.draw('legend', (el) => {
+  const rows = rowsOf('kinematics'); if (!rows) { el.textContent = '—'; return; }
+  el.replaceChildren(...seriesFor(el.dataset.kind, rows).map((s, i) => { const sp = document.createElement('span'), dot = document.createElement('i'); dot.style.background = dash.colors[i]; sp.append(dot, s.label); return sp; }));
+});
+dash.draw('line', (el) => {
+  const rows = rowsOf('kinematics'), kind = el.dataset.kind;
+  delete state.cursors[kind];
+  if (!rows) { el.textContent = ''; return; }
+  const series = seriesFor(kind, rows), W = el.clientWidth, H = 230, top = 8, bottom = 26, right = 8;
+  const vals = series.flatMap((s) => rows.map((r) => r[s.key])).filter((v) => v !== null);
+  const y = d3.scaleLinear(d3.extent(vals), [H - bottom, top]).nice();
+  const svg = d3.create('svg').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img');
+  const fmt = y.tickFormat(5);
+  const probeText = svg.append('text').style('font-size', 'var(--cds-font-size-caption)').text(y.ticks(5).map(fmt).sort((a, b) => b.length - a.length)[0]);
+  el.replaceChildren(svg.node());
+  const left = Math.ceil(probeText.node().getComputedTextLength()) + 10; probeText.remove();
+  const x = d3.scaleLinear(d3.extent(rows, (r) => r.t), [left, W - right]);
+  d3.groups(rows, (r) => r.phase).forEach(([phase, part], i) => {
+    if (i % 2) svg.append('rect').attr('x', x(part[0].t)).attr('y', top).attr('width', x(part[part.length - 1].t) - x(part[0].t)).attr('height', H - bottom - top).style('fill', 'var(--cds-chart-grid)').style('opacity', 0.5);
+    svg.append('text').attr('x', x(part[0].t) + 4).attr('y', top + 10).text(`WP ${phase}`);
+  });
+  y.ticks(5).forEach((t) => { svg.append('line').attr('x1', left).attr('x2', W - right).attr('y1', y(t)).attr('y2', y(t)).style('stroke', 'var(--cds-chart-grid)'); svg.append('text').attr('x', left - 6).attr('y', y(t) + 4).attr('text-anchor', 'end').text(fmt(t)); });
+  x.ticks(Math.max(3, Math.floor(W / 90))).forEach((t) => svg.append('text').attr('x', x(t)).attr('y', H - 8).attr('text-anchor', 'middle').text(`${t} s`));
+  series.forEach((s, i) => {
+    const line = d3.line().defined((r) => r[s.key] !== null).x((r) => x(r.t)).y((r) => y(r[s.key]));
+    svg.append('path').attr('d', line(rows)).attr('fill', 'none').attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').style('stroke', dash.colors[i]);
+  });
+  const cursor = svg.append('line').attr('y1', top).attr('y2', H - bottom).style('stroke', 'var(--cds-chart-reference)').style('stroke-width', 1);
+  state.cursors[kind] = () => { const px = x(rows[state.tick].t); cursor.attr('x1', px).attr('x2', px); };
+  state.cursors[kind]();
+  const tip = document.createElement('div'); tip.className = 'sk-tip'; tip.hidden = true; el.append(tip);
+  const node = svg.node(), bis = d3.bisector((r) => r.t).center;
+  node.addEventListener('pointermove', (e) => {
+    const b = node.getBoundingClientRect(); const px = (e.clientX - b.left) * W / b.width;
+    const i = Math.max(0, Math.min(rows.length - 1, bis(rows, x.invert(px)))); if (state.timer) stop(); setTick(i);
+    showTip(tip, el, x(rows[i].t), 10, `${rows[i].t.toFixed(2)} s, waypoint ${rows[i].phase}`,
+      series.map((s, k) => ({color: dash.colors[k], text: `${s.label} ${rows[i][s.key] === null ? 'no return' : rows[i][s.key].toFixed(3)}`})));
+  });
+  node.addEventListener('pointerleave', () => { tip.hidden = true; });
+});
+
+const bars = (el, rows, label, value, limit) => {
+  const W = el.clientWidth, band = 26, H = rows.length * band + 4, tip = document.createElement('div'); tip.className = 'sk-tip'; tip.hidden = true;
+  const svg = d3.create('svg').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img');
+  el.replaceChildren(svg.node(), tip);
+  const sizes = rows.map((r) => { const t = svg.append('text').style('font-size', 'var(--cds-font-size-caption)').text(r[label]); const w = t.node().getComputedTextLength(); t.remove(); return w; });
+  const left = Math.ceil(d3.max(sizes)) + 10, x = d3.scaleLinear([0, limit || d3.max(rows, (r) => r[value])], [left, W - 34]);
+  rows.forEach((r, i) => {
+    const g = svg.append('g');
+    g.append('rect').attr('x', 0).attr('y', i * band).attr('width', W).attr('height', band).style('fill', 'transparent');
+    g.append('text').attr('x', 0).attr('y', i * band + 17).text(r[label]);
+    g.append('rect').attr('x', left).attr('y', i * band + 6).attr('width', Math.max(1, x(r[value]) - left)).attr('height', 14).attr('rx', 2).style('fill', dash.colors[0]);
+    g.append('text').attr('x', x(r[value]) + 5).attr('y', i * band + 17).text(r[value]);
+    g.on('pointermove', (e) => { const [px, py] = d3.pointer(e, el); showTip(tip, el, px, py + 8, r[label], [{text: `${r[value]}`}]); }).on('pointerleave', () => { tip.hidden = true; });
+  });
+  return {svg, x, H};
+};
+dash.draw('rates', (el) => {
+  const rows = rowsOf('links'); if (!rows) { el.textContent = ''; return; }
+  const {svg, x, H} = bars(el, rows, 'link', 'rate_hz', LOG_HZ);
+  svg.append('line').attr('x1', x(LOG_HZ)).attr('x2', x(LOG_HZ)).attr('y1', 0).attr('y2', H).attr('stroke-dasharray', '4 3').style('stroke', 'var(--cds-chart-reference)');
+});
+dash.draw('stuck', (el) => {
+  const rows = rowsOf('sensors'); if (!rows) { el.textContent = ''; return; }
+  bars(el, rows.filter((r) => r.stuck_zones > 0).sort((a, b) => b.stuck_zones - a.stuck_zones), 'sensor', 'stuck_zones');
+});
+dash.draw('sensorRows', (el) => {
+  const rows = rowsOf('sensors'); if (!rows) { el.replaceChildren(); return; }
+  const cols = ['sensor', 'link', 'valid_pct', 'rate_hz', 'age_ms', 'median_mm', 'noise_mm', 'stuck_zones'];
+  const shown = rows.filter((r) => r.sensor.toLowerCase().includes(state.query)).slice().sort((a, b) => { const d = d3.ascending(a[state.sort], b[state.sort]); return state.desc ? -d : d; });
+  el.replaceChildren(...shown.map((r) => { const tr = document.createElement('tr'); if (r.stuck_zones > 0) tr.className = 'stuck'; cols.forEach((c) => { const td = document.createElement('td'); td.textContent = r[c] === null ? '—' : String(r[c]); tr.append(td); }); return tr; }));
+});
+</script>
+<script>dash._all();let rz;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>dash._all(),150)});</script></div></body></html>
