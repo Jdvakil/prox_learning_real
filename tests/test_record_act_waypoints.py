@@ -95,7 +95,7 @@ class MockRobotTests(unittest.TestCase):
                         translation=np.zeros(3), quaternion_xyzw=np.array([0, 0, 0, 1]),
                         elbow=np.zeros(2))
 
-        args = act.parse_args(["--no-cameras", "--no-gripper", "--lead", "0",
+        args = act.parse_args(["--no-cameras", "--lead", "0",
                                "--reset-settle", "0", "--tail", "0.01"])
         listener = SimpleNamespace(snapshot=lambda: {})
         # Shorten wall time without changing the path mathematics under test.
@@ -104,11 +104,15 @@ class MockRobotTests(unittest.TestCase):
             "franky": SimpleNamespace(JointMotion=lambda q: q, JointImpedanceTracker=Tracker)
         }), patch.object(act.base, "read_robot_state", side_effect=state):
             row = Path(temp) / "episode"
-            act.collect_episode(robot, listener, None, [], plan, args, row, None)
+            act.collect_episode(robot, listener, [], plan, args, row, None)
             self.assertEqual(len(robot.moves), 1)
             self.assertTrue(json.loads((row / "result.json").read_text())["clean_success"])
             with h5py.File(row / "trajectory.h5") as handle:
                 traj = handle["traj_0"]
+                self.assertNotIn("gripper_width", traj["real"])
+                for path in ("obs/agent/qpos", "obs/agent/qvel", "actions/joint_pos", "actions/commanded_action"):
+                    for encoded in traj[path][:]:
+                        self.assertNotIn("gripper", json.loads(bytes(encoded).rstrip(b"\x00")))
                 actions = [json.loads(bytes(row).rstrip(b"\x00"))["arm"]
                            for row in traj["actions/joint_pos"][:]]
                 q_ref = traj["real/target_q"][:]

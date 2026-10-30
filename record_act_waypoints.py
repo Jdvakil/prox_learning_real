@@ -3,7 +3,7 @@
 Each row has the same RGB-D/proximity/HDF5 layout as record_dataset.py. Reset to A
 is outside the episode. Actions are absolute joint references in radians, sampled
 from the reference actually sent to a 100 Hz JointImpedanceTracker, not final goals.
-The gripper is fixed open. Default: two episodes; use --episodes 20 for a batch.
+Only the seven arm joints are used. Default: two episodes; use --episodes 20 for a batch.
 --dry-run writes reproducible reference plans without connecting to hardware.
 """
 
@@ -146,12 +146,12 @@ class ReferenceRunner(threading.Thread):
                 raise RuntimeError("reference thread did not stop")
 
 
-def sample(robot, listener, gripper, runner, recorders, t0):
+def sample(robot, listener, runner, recorders, t0):
     # Freeze reference updates while reading observations, so the label is the
     # active command, not a separately recomputed future or final-goal reference.
     with runner.lock:
         q, dq, nominal, noise, clock = runner.reference
-        record = base.sample(robot, listener, gripper,
+        record = base.sample(robot, listener, None,
                              SimpleNamespace(phase=0, positions=[q]), recorders, t0)
         record.update(dq_ref=dq.copy(), nominal_q=nominal.copy(), noise_q=noise.copy(), clock=clock)
     for rec in recorders:
@@ -171,9 +171,17 @@ def write_episode(handle, records, runner, args, plan, recorders, t0, failure):
                     created_utc=datetime.now(timezone.utc).isoformat())
     base.save_h5(handle, records, metadata)
     traj = handle["traj_0"]
+    # The shared writer includes legacy hand fields. This task has only an arm.
+    for path in ("obs/agent/qpos", "obs/agent/qvel", "actions/joint_pos", "actions/commanded_action"):
+        dataset = traj[path]
+        for i in range(len(dataset)):
+            value = json.loads(bytes(dataset[i]).rstrip(b"\x00"))
+            value.pop("gripper", None)
+            dataset[i] = base.json_row(value)
+    del traj["real/gripper_width"]
     traj["actions"].attrs["meaning"] = (
         "absolute joint reference actually sent to impedance tracker at observation time; "
-        "radians, fixed open gripper (0); no action time shift applied")
+        "seven arm joints in radians; no action time shift applied")
     for key in ("dq_ref", "nominal_q", "noise_q", "clock"):
         traj["real"].create_dataset(key, data=np.stack([record[key] for record in records]))
     traj["real"].create_dataset("noise_coefficients", data=plan.coefficients)
@@ -187,7 +195,7 @@ def write_episode(handle, records, runner, args, plan, recorders, t0, failure):
         rec.write_index(t0, [record[rec.cam.name][0] for record in records])
 
 
-def collect_episode(robot, listener, gripper, cameras, plan, args, row, control_cpus):
+def collect_episode(robot, listener, cameras, plan, args, row, control_cpus):
     from franky import JointMotion
 
     print(f"reset to A (not recorded): {plan.start.tolist()}")
@@ -211,7 +219,7 @@ def collect_episode(robot, listener, gripper, cameras, plan, args, row, control_
             t0 = time.monotonic()
             tick = 0
             while True:
-                records.append(sample(robot, listener, gripper, runner, recorders, t0))
+                records.append(sample(robot, listener, runner, recorders, t0))
                 if runner.ident is None and time.monotonic() - t0 >= args.lead:
                     if all(rec.ready() for rec in recorders):
                         runner.start()
@@ -283,7 +291,6 @@ def parse_args(argv=None):
     parser.add_argument("--cam-fps", type=int, default=30)
     parser.add_argument("--no-depth", action="store_true")
     parser.add_argument("--rgb-h5", action="store_true")
-    parser.add_argument("--no-gripper", action="store_true", help="skip opening/reading; keep gripper open manually")
     parser.add_argument("--dry-run", action="store_true", help="save plans only; no hardware connection")
     parser.add_argument("--output", type=Path, default=None, help="new batch directory containing episode rows")
     args = parser.parse_args(argv)
@@ -321,7 +328,7 @@ def main(argv=None):
         print(f"validated {len(plans)} plans; no hardware connected: {output}")
         return
 
-    from franky import Gripper, Robot
+    from franky import Robot
 
     affinity = os.sched_getaffinity(0)
     with ExitStack() as cleanup:
@@ -341,16 +348,9 @@ def main(argv=None):
         robot = Robot(args.host)
         robot.recover_from_errors()
         robot.relative_dynamics_factor = args.dynamics
-        gripper = None
-        if not args.no_gripper:
-            if not Gripper(args.host).open(0.05):
-                raise RuntimeError("gripper did not open")
-            gripper = base.GripperReader(args.host)
-            gripper.start()
-            cleanup.callback(gripper.stop_event.set)
         for i, plan in enumerate(plans):
             print(f"episode {i + 1}/{len(plans)}, seed {plan.seed}")
-            collect_episode(robot, listener, gripper, cameras, plan, args,
+            collect_episode(robot, listener, cameras, plan, args,
                             output / f"episode_{i:04d}", control_cpus)
 
 

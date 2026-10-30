@@ -107,8 +107,10 @@ python record_act_waypoints.py --episodes 2 --seed 0 \
 The default motion takes 8 seconds, with 1 second of lead-in and 1 second holding B.
 A minimum-jerk reference runs through the joint impedance tracker at 100 Hz; observations
 and ACT action labels are sampled at 15 Hz. Actions contain the actual noisy absolute joint
-reference active at that observation, not the final waypoint. The gripper is opened once
-and held open; `--no-gripper` skips opening/reading and requires it to be kept open manually.
+reference active at that observation, not the final waypoint. Only the seven arm joints
+are used; there is no gripper connection, command, polling, or saved gripper state.
+The existing ACT converter still pads its fixed observation/action dimensions with zeros
+for missing gripper fields; an arm-only training setup should select the first seven entries.
 Each row can be processed by the existing ACT converter using the usual camera names.
 Repeat `--camera NAME SERIAL` for more cameras; the converter's supported camera names
 still apply. RGB-D/proximity storage flags match `record_dataset.py`.
