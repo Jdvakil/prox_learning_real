@@ -155,6 +155,7 @@ class MotionRunner(threading.Thread):
         self.pause = pause
         self.phase = 0
         self.error = None
+        self.started_at = self.finished_at = None
         self.abort = threading.Event()
         self.done = threading.Event()
 
@@ -163,6 +164,7 @@ class MotionRunner(threading.Thread):
 
         if self.control_cpus:
             os.sched_setaffinity(0, self.control_cpus)     # franky's control thread inherits this
+        self.started_at = time.monotonic()
         try:
             for index, target in enumerate(self.positions):
                 if self.abort.is_set():
@@ -174,6 +176,7 @@ class MotionRunner(threading.Thread):
         except Exception as exc:
             self.error = exc
         finally:
+            self.finished_at = time.monotonic()
             self.done.set()
 
 
@@ -189,6 +192,7 @@ class Mp4Writer:
         self.path, self.fps = str(path), fps
         self.writer = None
         self.cv2 = None
+        self.frames = 0
 
     def append(self, frame):
         if self.writer is None:
@@ -208,6 +212,7 @@ class Mp4Writer:
             self.writer.append_data(frame)
         else:
             self.writer.write(self.cv2.cvtColor(frame, self.cv2.COLOR_RGB2BGR))
+        self.frames += 1
 
     def close(self):
         if self.writer is None:
@@ -242,6 +247,10 @@ class CameraRecorder(threading.Thread):
     def begin(self):
         self.start()
         self.cam.sink = lambda frame: self.queue.put(("frame", frame))
+
+    def ready(self):
+        """True once both ffmpeg processes run (imageio forks them on the first frame)."""
+        return self.full.frames > 0 and self.episode.frames > 0
 
     def tick(self, rgb):
         if self.error is None:
@@ -575,11 +584,17 @@ def collect(args, row):
         for rec in recorders:
             rec.begin()
         t0 = time.monotonic()
-        runner.start()
         tick = 0
         stop_at = None
         while True:
             records.append(sample(robot, listener, gripper, runner, recorders, t0))
+            # The motion starts only after the encoders: forking ffmpeg from this process while the
+            # 1 kHz control thread runs stalls it, and a discontinuity reflex aborts the motion.
+            if runner.ident is None and time.monotonic() - t0 >= args.lead:
+                if all(rec.ready() for rec in recorders):
+                    runner.start()
+                elif time.monotonic() - t0 >= args.lead + 10.0:
+                    raise RuntimeError("video encoders did not start")
             if runner.done.is_set() and stop_at is None:
                 stop_at = time.monotonic() + args.tail
             if stop_at is not None and time.monotonic() >= stop_at:
@@ -591,7 +606,8 @@ def collect(args, row):
             else:
                 tick = int((time.monotonic() - t0) / period) + 1     # fell behind: skip, keep the grid
         if runner.error is not None:
-            print(f"motion stopped early: {runner.error}")
+            print(f"motion stopped early, {runner.finished_at - runner.started_at:.3f} s after motion start: "
+                  f"{runner.error}")
             failure = runner.error
     except BaseException as exc:
         failure = exc
@@ -668,6 +684,8 @@ def main():
     parser.add_argument("--host", default="172.16.0.2", help="FCI IP of the robot")
     parser.add_argument("--dynamics", type=float, default=0.05, help="relative velocity, acceleration, and jerk")
     parser.add_argument("--pause", type=float, default=0.5, help="seconds to hold at each waypoint (still logging)")
+    parser.add_argument("--lead", type=float, default=1.0,
+                        help="seconds to log with the arm still, after the video encoders start and before it moves")
     parser.add_argument("--tail", type=float, default=0.5, help="seconds to keep logging after the last waypoint")
     parser.add_argument("--warmup-timeout", type=float, default=5.0,
                         help="seconds to wait for every sensor to report before moving")
