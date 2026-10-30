@@ -1,15 +1,25 @@
-(franky) jaydv@verstappen:~/prox_learning_real$ python record_dataset.py --pause 0.5 --dynamics 0.05 --wrist-serial 836612071883
+(franky) jaydv@verstappen:~/prox_learning_real$ python record_dataset.py --camera wrist 836612071883 --camera table 943222071556 --rgb-h5 
+resetting cameras 836612071883, 943222071556
+warning: no gripper width (libfranka: Connection to FCI refused. Please install FCI feature or enable FCI mode in Desk.)
+waypoint 0: moving to [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
+waypoint 1: moving to [0.2, -0.1, 0.3, -2.0, 0.1, 1.9, 0.6]
+waypoint 2: moving to [0.4, -0.3, 0.1, -2.3, 0.0, 2.2, 0.5]
+waypoint 3: moving to [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
+saved 86 ticks over 5.7 s to recordings/20261030T182811Z
+tick period 66.7 ms mean, 73.8 ms max (target 66.7)
+sensor packet rate 6.7-12.2 Hz, packet age median 60 ms, max 227 ms
+sensors under half the tick rate: link1_sensor_0 6.7 Hz, link1_sensor_1 6.9 Hz, link1_sensor_2 6.9 Hz, link1_sensor_3 6.9 Hz, link1_sensor_4 6.9 Hz, link1_sensor_5 6.7 Hz, link1_sensor_6 6.7 Hz, link2_sensor_0 6.7 Hz, link2_sensor_1 6.7 Hz, link2_sensor_2 6.7 Hz, link2_sensor_3 6.7 Hz, link2_sensor_4 6.9 Hz, link2_sensor_5 6.9 Hz, link2_sensor_6 6.9 Hz
+wrist: 23 frames at 30.6 fps (target 30), 0 dropped by the camera, write backlog max 2; 86 tick frames, age median 2073 ms
+table: 22 frames at 30.2 fps (target 30), 0 dropped by the camera, write backlog max 1; 86 tick frames, age median 2102 ms
 Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 625, in <module>
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 644, in <module>
     main()
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 621, in main
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 640, in main
     collect(args, row)
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 491, in collect
-    cameras = open_cameras(args)
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 469, in open_cameras
-    cam.wait_ready()
-  File "/home/jaydv/prox_learning_real/cameras.py", line 135, in wait_ready
-    frame, count = self.latest()
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 527, in collect
+    records.append(sample(robot, listener, gripper, runner, recorders, t0))
+  File "/home/jaydv/prox_learning_real/record_dataset.py", line 364, in sample
+    (rgb, _, number, _, arrived), _ = rec.cam.latest()
   File "/home/jaydv/prox_learning_real/cameras.py", line 127, in latest
     raise RuntimeError(f"{self.name} camera stopped: {self.error!r}")
-RuntimeError: wrist_camera camera stopped: RuntimeError('no frames from 836612071883 (USB 3.2); try a USB 3 port/cable, lower --fps/--width/--height, or --reset')
+RuntimeError: wrist camera stopped: RuntimeError('get_xu(...). xioctl(UVCIOC_CTRL_QUERY) failed on control 1 Last Error: Connection timed out')
