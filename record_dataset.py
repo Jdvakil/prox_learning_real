@@ -42,6 +42,7 @@ Requires franky (built from submodules/franky), h5py, pyrealsense2 and imageio[f
 
 import argparse
 import json
+import os
 import queue
 import re
 import select
@@ -146,8 +147,9 @@ class GripperReader(threading.Thread):
 class MotionRunner(threading.Thread):
     """Moves through the waypoints one after another, pausing at each."""
 
-    def __init__(self, robot, positions, pause):
+    def __init__(self, robot, positions, pause, control_cpus=None):
         super().__init__(daemon=True)
+        self.control_cpus = control_cpus
         self.robot = robot
         self.positions = positions
         self.pause = pause
@@ -159,6 +161,8 @@ class MotionRunner(threading.Thread):
     def run(self):
         from franky import JointMotion
 
+        if self.control_cpus:
+            os.sched_setaffinity(0, self.control_cpus)     # franky's control thread inherits this
         try:
             for index, target in enumerate(self.positions):
                 if self.abort.is_set():
@@ -174,7 +178,12 @@ class MotionRunner(threading.Thread):
 
 
 class Mp4Writer:
-    """Streaming RGB uint8 -> H.264 mp4 (imageio-ffmpeg), or MPEG-4 through OpenCV without imageio."""
+    """Streaming RGB uint8 -> H.264 mp4 (imageio-ffmpeg), or MPEG-4 through OpenCV without imageio.
+
+    Encoding runs while the arm moves. The ultrafast preset and thread cap keep it from taking
+    CPU from the 1 kHz control loop: default x264 costs about 1.5 cores per 30 fps stream, and two
+    cameras that way aborted the motion with a discontinuity reflex.
+    """
 
     def __init__(self, path, fps):
         self.path, self.fps = str(path), fps
@@ -187,7 +196,8 @@ class Mp4Writer:
                 import imageio.v2 as imageio
 
                 self.writer = imageio.get_writer(self.path, fps=self.fps, codec="libx264", quality=8,
-                                                 macro_block_size=1, ffmpeg_log_level="error")
+                                                 macro_block_size=1, ffmpeg_log_level="error",
+                                                 ffmpeg_params=["-preset", "ultrafast", "-threads", "2"])
             except ImportError:
                 import cv2
 
@@ -456,6 +466,34 @@ def save_h5(handle, records, metadata):
     real.create_dataset("gripper_width", data=width)
 
 
+def reserve_control_cpus(choice):
+    """Keep recording work off one physical core and return that core's CPUs for the control thread.
+
+    Threads and ffmpeg processes inherit the affinity of their creator, so this runs before anything
+    else starts. choice is a CPU number, None for the last available CPU, or -1 to reserve nothing.
+    """
+    available = os.sched_getaffinity(0)
+    if choice == -1:
+        return None
+    cpu = max(available) if choice is None else choice
+    if cpu not in available:
+        raise ValueError(f"--control-cpu {cpu} is not one of the available CPUs {sorted(available)}")
+    control = {cpu}
+    try:
+        for part in Path(f"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list").read_text().split(","):
+            first, _, last = part.strip().partition("-")
+            control.update(range(int(first), int(last or first) + 1))
+    except (OSError, ValueError):
+        pass
+    control &= available
+    if len(available - control) < 2:
+        print("warning: too few CPUs to reserve one for robot control")
+        return None
+    os.sched_setaffinity(0, available - control)
+    print(f"robot control on CPU {sorted(control)}, recording on the other {len(available - control)}")
+    return control
+
+
 def stop_motion(robot, runner, timeout=30.0):
     """Stop the arm and the waypoint thread after a failure; the motion thread must not outlive it."""
     runner.abort.set()
@@ -501,6 +539,7 @@ def open_cameras(args):
 def collect(args, row):
     from franky import Robot
 
+    control_cpus = reserve_control_cpus(args.control_cpu)
     sockets = open_sensor_sockets()
     listener = SensorListener(sockets)
     listener.start()
@@ -531,7 +570,7 @@ def collect(args, row):
             group = handle.create_group(f"traj_0/real/cameras/{cam.name}")
             recorders.append(CameraRecorder(cam, group, row, not args.no_depth, args.rgb_h5))
 
-        runner = MotionRunner(robot, POSITIONS, args.pause)
+        runner = MotionRunner(robot, POSITIONS, args.pause, control_cpus)
         period = 1.0 / RATE_HZ
         for rec in recorders:
             rec.begin()
@@ -634,6 +673,8 @@ def main():
                         help="seconds to wait for every sensor to report before moving")
     parser.add_argument("--allow-missing", action="store_true", help="record even if some sensors never report")
     parser.add_argument("--no-gripper", action="store_true", help="do not read the Franka Hand width")
+    parser.add_argument("--control-cpu", type=int, default=None,
+                        help="CPU kept free of recording work for robot control (default: last CPU, -1: none)")
     parser.add_argument("--wrist-serial", default=None, help="serial of the wrist D435 (python cameras.py)")
     parser.add_argument("--exo-serial", default=None, help="serial of the exocentric D435")
     parser.add_argument("--camera", nargs=2, action="append", default=[], metavar=("NAME", "SERIAL"),

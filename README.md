@@ -76,7 +76,9 @@ their full rate (30 fps by default): every frame's depth goes into `trajectory.h
 with per-frame `t`, `frame_number`, and `tick_frame` = the frame used at each 15 Hz tick) and its
 RGB into `<name>_<fps>fps.mp4`; the per-tick frame also goes into `episode_00000000_<name>.mp4` so
 the row converts like a replay row. Cameras stream 3 s before the arm moves so auto white balance
-settles (replay too). If a camera gives no frames for 1 s or the motion fails, the arm is stopped
+settles (replay too). While recording, one physical core is reserved for the robot control thread
+(`--control-cpu`, default last CPU, -1 = none) and video is encoded with x264 `ultrafast`: full load on
+the control loop aborted motions with a discontinuity reflex with two cameras. If a camera gives no frames for 1 s or the motion fails, the arm is stopped
 and the partial row is saved with `result.json` `clean_success: false` (the converter skips it,
 the error is also in the `error` attribute of `traj_0`). Recording waits until every sensor has reported
 (`--allow-missing` to skip that) and prints tick timing, per-sensor packet rate, camera fps,
