@@ -1,25 +1,15 @@
-(franky) jaydv@verstappen:~/prox_learning_real$ python record_dataset.py --camera wrist 836612071883 --camera table 943222071556 --rgb-h5 
+/home/jaydv/prox_learning_real/record_dataset.py:648: RuntimeWarning: All-NaN slice encountered
+  f"packet age median {np.nanmedian(age):.0f} ms, max {np.nanmax(age):.0f} ms")
+robot control on CPU [7, 15], recording on the other 14
+warning: no packets from: link1 sensor 0, link1 sensor 1, link1 sensor 2, link1 sensor 3, link1 sensor 4, link1 sensor 5, link1 sensor 6, link2 sensor 0, link2 sensor 1, link2 sensor 2, link2 sensor 3, link2 sensor 4, link2 sensor 5, link2 sensor 6, link3 sensor 0, link3 sensor 1, link3 sensor 2, link3 sensor 3, link3 sensor 4, link5_small sensor 0, link5_small sensor 1, link5_small sensor 2, link5_small sensor 3, link5_large sensor 0, link5_large sensor 1, link5_large sensor 2, link5_large sensor 3, link5_large sensor 4, link5_large sensor 5, link6 sensor 0, link6 sensor 1, link6 sensor 2, link6 sensor 3, link6 sensor 4, link6 sensor 5, link4 sensor 0, link4 sensor 1, link4 sensor 2, link4 sensor 3, link4 sensor 4
 resetting cameras 836612071883, 943222071556
 warning: no gripper width (libfranka: Connection to FCI refused. Please install FCI feature or enable FCI mode in Desk.)
 waypoint 0: moving to [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
-waypoint 1: moving to [0.2, -0.1, 0.3, -2.0, 0.1, 1.9, 0.6]
-waypoint 2: moving to [0.4, -0.3, 0.1, -2.3, 0.0, 2.2, 0.5]
-waypoint 3: moving to [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
-saved 86 ticks over 5.7 s to recordings/20261030T182811Z
-tick period 66.7 ms mean, 73.8 ms max (target 66.7)
-sensor packet rate 6.7-12.2 Hz, packet age median 60 ms, max 227 ms
-sensors under half the tick rate: link1_sensor_0 6.7 Hz, link1_sensor_1 6.9 Hz, link1_sensor_2 6.9 Hz, link1_sensor_3 6.9 Hz, link1_sensor_4 6.9 Hz, link1_sensor_5 6.7 Hz, link1_sensor_6 6.7 Hz, link2_sensor_0 6.7 Hz, link2_sensor_1 6.7 Hz, link2_sensor_2 6.7 Hz, link2_sensor_3 6.7 Hz, link2_sensor_4 6.9 Hz, link2_sensor_5 6.9 Hz, link2_sensor_6 6.9 Hz
-wrist: 23 frames at 30.6 fps (target 30), 0 dropped by the camera, write backlog max 2; 86 tick frames, age median 2073 ms
-table: 22 frames at 30.2 fps (target 30), 0 dropped by the camera, write backlog max 1; 86 tick frames, age median 2102 ms
-Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 644, in <module>
-    main()
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 640, in main
-    collect(args, row)
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 527, in collect
-    records.append(sample(robot, listener, gripper, runner, recorders, t0))
-  File "/home/jaydv/prox_learning_real/record_dataset.py", line 364, in sample
-    (rgb, _, number, _, arrived), _ = rec.cam.latest()
-  File "/home/jaydv/prox_learning_real/cameras.py", line 127, in latest
-    raise RuntimeError(f"{self.name} camera stopped: {self.error!r}")
-RuntimeError: wrist camera stopped: RuntimeError('get_xu(...). xioctl(UVCIOC_CTRL_QUERY) failed on control 1 Last Error: Connection timed out')
+motion stopped early: Motion finished commanded, but the robot is still moving! ["joint_motion_generator_velocity_discontinuity", "joint_motion_generator_acceleration_discontinuity"]
+control_command_success_rate: 1
+saved 13 ticks over 0.8 s to recordings/20261030T200700Z
+tick period 66.7 ms mean, 72.8 ms max (target 66.7)
+sensor packet rate 0.0-0.0 Hz, packet age median nan ms, max nan ms
+sensors under half the tick rate: link1_sensor_0 0.0 Hz, link1_sensor_1 0.0 Hz, link1_sensor_2 0.0 Hz, link1_sensor_3 0.0 Hz, link1_sensor_4 0.0 Hz, link1_sensor_5 0.0 Hz, link1_sensor_6 0.0 Hz, link2_sensor_0 0.0 Hz, link2_sensor_1 0.0 Hz, link2_sensor_2 0.0 Hz, link2_sensor_3 0.0 Hz, link2_sensor_4 0.0 Hz, link2_sensor_5 0.0 Hz, link2_sensor_6 0.0 Hz, link3_sensor_0 0.0 Hz, link3_sensor_1 0.0 Hz, link3_sensor_2 0.0 Hz, link3_sensor_3 0.0 Hz, link3_sensor_4 0.0 Hz, link5_front_sensor_0 0.0 Hz, link5_front_sensor_1 0.0 Hz, link5_front_sensor_2 0.0 Hz, link5_front_sensor_3 0.0 Hz, link5_back_sensor_0 0.0 Hz, link5_back_sensor_1 0.0 Hz, link5_back_sensor_2 0.0 Hz, link5_back_sensor_3 0.0 Hz, link5_back_sensor_4 0.0 Hz, link5_back_sensor_5 0.0 Hz, link6_sensor_0 0.0 Hz, link6_sensor_1 0.0 Hz, link6_sensor_2 0.0 Hz, link6_sensor_3 0.0 Hz, link6_sensor_4 0.0 Hz, link6_sensor_5 0.0 Hz, link4_sensor_0 0.0 Hz, link4_sensor_1 0.0 Hz, link4_sensor_2 0.0 Hz, link4_sensor_3 0.0 Hz, link4_sensor_4 0.0 Hz
+wrist: 24 frames at 29.9 fps (target 30), 0 dropped by the camera, write backlog max 3; 13 tick frames, age median 22 ms
+table: 25 frames at 29.9 fps (target 30), 0 dropped by the camera, write backlog max 4; 13 tick frames, age median 25 ms
