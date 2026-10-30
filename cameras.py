@@ -33,10 +33,13 @@ def usb_type(serial):
     """USB link the camera enumerated on ("3.2", "2.1", ...); "?" if unknown."""
     import pyrealsense2 as rs
 
-    for dev in rs.context().query_devices():
-        if dev.get_info(rs.camera_info.serial_number) == serial:
-            if dev.supports(rs.camera_info.usb_type_descriptor):
-                return dev.get_info(rs.camera_info.usb_type_descriptor)
+    try:
+        for dev in rs.context().query_devices():
+            if dev.get_info(rs.camera_info.serial_number) == serial:
+                if dev.supports(rs.camera_info.usb_type_descriptor):
+                    return dev.get_info(rs.camera_info.usb_type_descriptor)
+    except Exception:                # a hung camera can fail this query too
+        pass
     return "?"
 
 
@@ -89,12 +92,12 @@ class RealSenseCamera(threading.Thread):
 
     def run(self):
         # The first frameset can take several seconds after start; later misses are tolerated
-        # until no frame has arrived for 5 s.
-        first_timeout_ms, stall_s = 10000, 5.0
+        # until no frame has arrived for 1 s, so a recording never logs a long frozen stretch.
+        first_timeout_ms, poll_ms, stall_s = 10000, 200, 1.0
         last = time.monotonic()
         try:
             while not self.stop_event.is_set():
-                ok, frames = self.pipeline.try_wait_for_frames(first_timeout_ms if self.count == 0 else 1000)
+                ok, frames = self.pipeline.try_wait_for_frames(first_timeout_ms if self.count == 0 else poll_ms)
                 if not ok:
                     if self.count == 0 or time.monotonic() - last > stall_s:
                         raise RuntimeError(f"no frames from {self.serial} (USB {usb_type(self.serial)}); "

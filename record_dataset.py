@@ -153,6 +153,7 @@ class MotionRunner(threading.Thread):
         self.pause = pause
         self.phase = 0
         self.error = None
+        self.abort = threading.Event()
         self.done = threading.Event()
 
     def run(self):
@@ -160,10 +161,12 @@ class MotionRunner(threading.Thread):
 
         try:
             for index, target in enumerate(self.positions):
+                if self.abort.is_set():
+                    break
                 self.phase = index
                 print(f"waypoint {index}: moving to {target.tolist()}")
                 self.robot.move(JointMotion(target.tolist()))
-                time.sleep(self.pause)
+                self.abort.wait(self.pause)
         except Exception as exc:
             self.error = exc
         finally:
@@ -453,6 +456,18 @@ def save_h5(handle, records, metadata):
     real.create_dataset("gripper_width", data=width)
 
 
+def stop_motion(robot, runner, timeout=30.0):
+    """Stop the arm and the waypoint thread after a failure; the motion thread must not outlive it."""
+    runner.abort.set()
+    try:
+        robot.stop()                 # preempts the running JointMotion
+    except Exception as exc:
+        print(f"warning: robot.stop failed ({exc}); waiting for the current waypoint")
+    runner.join(timeout=timeout)
+    if runner.is_alive():
+        print("warning: arm still moving to its current waypoint")
+
+
 def camera_specs(args):
     """Resolve legacy role flags and repeatable named cameras, rejecting output collisions."""
     specs = [(name, serial) for name, serial in (("wrist_camera", args.wrist_serial), ("exo_camera_1", args.exo_serial))
@@ -492,6 +507,7 @@ def collect(args, row):
     gripper = None
     cameras, recorders = [], []
     handle = None
+    robot = runner = failure = None
     records = []
     t0 = time.monotonic()
     try:
@@ -537,7 +553,13 @@ def collect(args, row):
                 tick = int((time.monotonic() - t0) / period) + 1     # fell behind: skip, keep the grid
         if runner.error is not None:
             print(f"motion stopped early: {runner.error}")
+            failure = runner.error
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
+        if runner is not None and runner.ident is not None and not runner.done.is_set():
+            stop_motion(robot, runner)
         for rec in recorders:
             rec.finish()
         listener.stop_event.set()
@@ -563,9 +585,13 @@ def collect(args, row):
                     "pause_s": args.pause,
                     "bad_packets": listener.bad,
                     "cameras": [cam.name for cam in cameras],
+                    "error": "" if failure is None else repr(failure),
                 }
                 save_h5(handle, records, metadata)
             handle.close()
+            if failure is not None:          # the converter skips rows with clean_success false
+                (row / "result.json").write_text(json.dumps(
+                    {"clean_success": False, "error": repr(failure)}, indent=2) + "\n")
             if records:
                 report(records, recorders, row)
 
