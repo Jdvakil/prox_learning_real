@@ -1,8 +1,8 @@
-"""Move the Franka through joint waypoints and log the robot, all 41 proximity sensors and both D435s.
+"""Move the Franka through joint waypoints and log the robot, all 41 proximity sensors and multiple RealSenses.
 
 The arm runs in a background thread while the main loop samples on a fixed 15 Hz clock, so the
 log covers the motion itself, not only the stops. A listener thread keeps the newest packet of
-every sensor; each tick stores that packet and how old it is. Each camera (wrist, exocentric) is
+every sensor; each tick stores that packet and how old it is. Each configured camera is
 recorded at its full rate (30 fps): every frame is streamed to disk while the arm moves, and the
 newest frame at each 15 Hz tick also goes into a per-tick video for the ACT converter.
 
@@ -12,8 +12,8 @@ One recording is a row folder:
       trajectory.h5                       layout below
       episode_00000000_wrist_camera.mp4   RGB, one frame per 15 Hz tick (convert_pact_place_to_act)
       episode_00000000_exo_camera_1.mp4
-      wrist_camera_30fps.mp4              RGB, every camera frame
-      exo_camera_1_30fps.mp4
+      wrist_camera_<fps>fps.mp4           RGB, every camera frame
+      exo_camera_1_<fps>fps.mp4
 
 The HDF5 file uses the sim datagen layout (MolmoSpaces trajectories_*.h5) so the prox_learning
 converters and viewers read it the same way:
@@ -43,6 +43,7 @@ Requires franky (built from submodules/franky), h5py, pyrealsense2 and imageio[f
 import argparse
 import json
 import queue
+import re
 import select
 import socket
 import struct
@@ -209,7 +210,7 @@ class CameraRecorder(threading.Thread):
 
     The camera thread hands each frame over through cam.sink; this thread appends the depth to a
     resizable dataset in the open trajectory.h5 (and the RGB with rgb_h5) and the RGB to
-    <name>_30fps.mp4. tick() queues the RGB used at a 15 Hz tick for the per-tick episode mp4.
+    <name>_<fps>fps.mp4. tick() queues the RGB used at a 15 Hz tick for the per-tick episode mp4.
     """
 
     def __init__(self, cam, group, row, store_depth, store_rgb):
@@ -217,7 +218,7 @@ class CameraRecorder(threading.Thread):
         self.cam, self.group = cam, group
         self.store_depth, self.store_rgb = store_depth, store_rgb
         self.queue = queue.Queue()
-        self.full = Mp4Writer(row / f"{cam.name}_15fps.mp4", cam.fps)
+        self.full = Mp4Writer(row / f"{cam.name}_{cam.fps}fps.mp4", cam.fps)
         self.episode = Mp4Writer(row / f"episode_00000000_{cam.name}.mp4", RATE_HZ)
         self.number, self.device_ms, self.arrived = [], [], []
         self.ticks = 0
@@ -289,7 +290,7 @@ class CameraRecorder(threading.Thread):
         for key, value in cam.intrinsics.items():
             group.attrs[key] = value
         group.attrs["serial"] = cam.serial
-        group.attrs["fps"] = 15
+        group.attrs["fps"] = cam.fps
         group.attrs["depth_scale_m"] = 0.001
         number = np.array(self.number, dtype=np.int64)
         group.create_dataset("frame_number", data=number)
@@ -452,14 +453,33 @@ def save_h5(handle, records, metadata):
     real.create_dataset("gripper_width", data=width)
 
 
-def open_cameras(args):
-    """Start the wrist (required) and exocentric RealSense threads and wait for auto exposure."""
-    from cameras import start_cameras
-
-    if not args.wrist_serial:
-        raise SystemExit("--wrist-serial is required (python cameras.py lists the cameras), or pass --no-cameras")
+def camera_specs(args):
+    """Resolve legacy role flags and repeatable named cameras, rejecting output collisions."""
     specs = [(name, serial) for name, serial in (("wrist_camera", args.wrist_serial), ("exo_camera_1", args.exo_serial))
              if serial]
+    specs.extend(tuple(spec) for spec in args.camera)
+    if not specs:
+        raise ValueError("specify --camera NAME SERIAL, --wrist-serial or --exo-serial "
+                         "(python cameras.py lists cameras), or pass --no-cameras")
+    names, serials = set(), set()
+    for name, serial in specs:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name):
+            raise ValueError(f"invalid camera name {name!r}: use letters, digits, underscores or hyphens; "
+                             "start with a letter or digit")
+        if name in names:
+            raise ValueError(f"duplicate camera name: {name}")
+        if serial in serials:
+            raise ValueError(f"camera serial configured more than once: {serial}")
+        names.add(name)
+        serials.add(serial)
+    return specs
+
+
+def open_cameras(args):
+    """Start all configured RealSense threads and wait for auto exposure."""
+    from cameras import start_cameras
+
+    specs = camera_specs(args)
     return start_cameras(specs, args.cam_width, args.cam_height, args.cam_fps, reset=not args.no_camera_reset)
 
 
@@ -590,6 +610,9 @@ def main():
     parser.add_argument("--no-gripper", action="store_true", help="do not read the Franka Hand width")
     parser.add_argument("--wrist-serial", default=None, help="serial of the wrist D435 (python cameras.py)")
     parser.add_argument("--exo-serial", default=None, help="serial of the exocentric D435")
+    parser.add_argument("--camera", nargs=2, action="append", default=[], metavar=("NAME", "SERIAL"),
+                        help="record a named RealSense; repeat for multiple cameras. May be combined with "
+                             "--wrist-serial / --exo-serial; names and serials must be unique")
     parser.add_argument("--no-cameras", action="store_true")
     parser.add_argument("--no-camera-reset", action="store_true",
                         help="skip the USB power-cycle before the cameras start (still retried once on failure)")
@@ -605,6 +628,11 @@ def main():
         help="row folder to create (default: recordings/<utc timestamp>/)",
     )
     args = parser.parse_args()
+    if not args.no_cameras:
+        try:
+            camera_specs(args)
+        except ValueError as exc:
+            parser.error(str(exc))
     row = args.output
     if row is None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

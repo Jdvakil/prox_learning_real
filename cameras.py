@@ -148,12 +148,14 @@ class RealSenseCamera(threading.Thread):
             pass
 
 
-def start_cameras(specs, width=640, height=480, fps=30, reset=True):
-    """Open (name, serial) cameras and wait until each one streams.
+def start_cameras(specs, width=640, height=480, fps=30, reset=True, settle=3.0):
+    """Open (name, serial) cameras, wait until each one streams, then let them settle.
 
     On the robot PC a D435 often gives no frames on a fresh start until it is power-cycled
     (python cameras.py failed the same way without --reset), so the cameras are reset first by
-    default. If one still gives no frames, all are reset and started once more.
+    default. If one still gives no frames, all are reset and started once more. Auto white
+    balance needs about 2 s after a start (the first frames come out orange), so the cameras keep
+    streaming for `settle` seconds before this returns.
     """
     serials = [serial for _, serial in specs]
     for attempt in (0, 1):
@@ -168,6 +170,9 @@ def start_cameras(specs, width=640, height=480, fps=30, reset=True):
                 cam.start()
             for cam in cams:
                 cam.wait_ready()
+            time.sleep(settle)
+            for cam in cams:
+                cam.latest()             # raises if a camera stopped while settling
             return cams
         except BaseException as exc:
             for cam in cams:

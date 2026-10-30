@@ -59,14 +59,24 @@ Edit `LAB` in `sim/lab_scene.py` with the measured bench (cabinet, block, tripod
 
 ```bash
 python record_dataset.py --wrist-serial <serial> --exo-serial <serial>   # -> recordings/<utc stamp>/
+
+# Any number of named cameras (no wrist camera required):
+python record_dataset.py --camera wrist_camera <serial1> --camera exo_camera_1 <serial2> --camera exo_camera_2 <serial3>
 ```
 
+Repeat `--camera NAME SERIAL` for each RealSense. Names and serials must be unique; names
+use letters, digits, underscores and hyphens, starting with a letter or digit. The existing
+`--wrist-serial` and `--exo-serial` flags still work and may be combined with `--camera`.
+Use `python cameras.py` to find the connected serials. Use `wrist_camera` and `exo_camera_1`
+for the corresponding ACT converter views.
+
 The arm moves through `POSITIONS` (top of `record_dataset.py`) while the robot state and the
-newest packet of all 41 sensors are logged on a fixed 15 Hz clock. Both D435s are recorded at
-their full 30 fps: every frame's depth goes into `trajectory.h5` (`traj_0/real/cameras/<name>/`,
+newest packet of all 41 sensors are logged on a fixed 15 Hz clock. All configured cameras are recorded at
+their full rate (30 fps by default): every frame's depth goes into `trajectory.h5` (`traj_0/real/cameras/<name>/`,
 with per-frame `t`, `frame_number`, and `tick_frame` = the frame used at each 15 Hz tick) and its
-RGB into `<name>_30fps.mp4`; the per-tick frame also goes into `episode_00000000_<name>.mp4` so
-the row converts like a replay row. Recording waits until every sensor has reported
+RGB into `<name>_<fps>fps.mp4`; the per-tick frame also goes into `episode_00000000_<name>.mp4` so
+the row converts like a replay row. Cameras stream 3 s before the arm moves so auto white balance
+settles (replay too). Recording waits until every sensor has reported
 (`--allow-missing` to skip that) and prints tick timing, per-sensor packet rate, camera fps,
 dropped frames and writer backlog when it ends. Flags: `--pause` (hold at each waypoint, still
 logging), `--tail`, `--dynamics`, `--no-gripper`, `--output` (row folder), `--no-cameras`,
