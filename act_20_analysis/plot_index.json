@@ -1,0 +1,62 @@
+[
+  {
+    "file": "01_joint_positions.png",
+    "title": "Joint positions: all 20 episodes and executed references",
+    "caption": "Absolute joint coordinates; shared endpoints and smooth motion should form a narrow bundle. No episode was removed."
+  },
+  {
+    "file": "02_joint_velocities.png",
+    "title": "Measured joint velocities: all 20 episodes",
+    "caption": "Absolute joint coordinates; shared endpoints and smooth motion should form a narrow bundle. No episode was removed."
+  },
+  {
+    "file": "03_joint_distributions.png",
+    "title": "Joint position and velocity distributions",
+    "caption": "Pooled observations, including lead-in and hold; dashed line is median. Peaks near zero velocity and endpoints are expected. Samples are temporally correlated, not independent trials."
+  },
+  {
+    "file": "04_phase_aligned_variation.png",
+    "title": "Between-episode variation at the same motion phase",
+    "caption": "Each motion is resampled to 121 points between A and B. Navy shows mean \u00b1 one population standard deviation across episodes; this is a descriptive spread, not a confidence interval."
+  },
+  {
+    "file": "05_joint_correlations.png",
+    "title": "Joint correlations",
+    "caption": "Correlations reflect the shared A-to-B task and added perturbations; they do not establish causal dependence."
+  },
+  {
+    "file": "06_position_velocity_pca.png",
+    "title": "PCA of measured joint positions and velocities",
+    "caption": "Each 7D dataset is mean-centered and analyzed separately by SVD without standardizing joints. Position PCA uses rad; velocity PCA uses rad/s. Motion phase colors reveal the dominant task trajectory."
+  },
+  {
+    "file": "07_combined_state_pca.png",
+    "title": "PCA of combined position and velocity state",
+    "caption": "All 14 features are standardized individually to zero mean and unit population SD before SVD, preventing radians and radians/second from being mixed directly. Low-variance joints receive equal weight after standardization."
+  },
+  {
+    "file": "08_motion_residual_pca.png",
+    "title": "PCA after subtracting the shared nominal A-to-B path",
+    "caption": "Measured position minus analytical noise-free path, resampled to equal motion phases. These residuals include injected variation, controller bias, and tracking error. PCA is mean-centered, unscaled. This reveals variation hidden by the dominant common trajectory."
+  },
+  {
+    "file": "09_episode_quality.png",
+    "title": "Motion and recording quality by episode",
+    "caption": "Negative final timestamp differences confirm that recorded observations finish while the reference stream is still active. All seeds and all episodes are included."
+  },
+  {
+    "file": "10_rgbd_quality.png",
+    "title": "RGB-D coverage, timing, and stream association",
+    "caption": "Every depth frame and every video frame was read. RGB association compares decoded 160\u00d7120 thumbnails; small differences are expected because the two videos are encoded independently. Nonzero depth coverage is a validity check, not proof of metric accuracy."
+  },
+  {
+    "file": "11_depth_distributions.png",
+    "title": "Depth distributions across every recorded pixel",
+    "caption": "Depth is uint16 millimeters aligned to color. Zero pixels are excluded here and reported separately. The exocentric camera sees a farther background than the wrist camera; distant returns alone are not considered corruption."
+  },
+  {
+    "file": "12_proximity_quality.png",
+    "title": "Proximity telemetry quality",
+    "caption": "Sensor values are latest-packet sample-and-hold. Sensor update rates are slower than the 15 Hz policy clock; repeated readings are expected. Camera and robot validity do not imply high-rate proximity sensing."
+  }
+]

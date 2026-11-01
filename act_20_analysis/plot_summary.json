@@ -1,0 +1,129 @@
+{
+  "episodes": 20,
+  "observations": 3040,
+  "total_recorded_seconds": 201.34014316100183,
+  "issues": [],
+  "max_tracking_error_rad": 0.008617218730963869,
+  "max_goal_error_rad": 0.008067784032247824,
+  "min_valid_depth_mean": {
+    "exo_camera_1": 0.914247061746162,
+    "wrist_camera": 0.9922006390092134
+  },
+  "pca": {
+    "position": {
+      "standardized": false,
+      "explained_variance_ratio": [
+        0.9934418122985055,
+        0.0019119784205081742,
+        0.0013993355326056033,
+        0.0010319946582394567,
+        0.000970914620360585,
+        0.0007505229372831832,
+        0.0004934415324974858
+      ],
+      "cumulative_variance": [
+        0.9934418122985055,
+        0.9953537907190136,
+        0.9967531262516193,
+        0.9977851209098587,
+        0.9987560355302193,
+        0.9995065584675025,
+        1.0
+      ],
+      "components_for_95pct": 1,
+      "components_for_99pct": 1
+    },
+    "velocity": {
+      "standardized": false,
+      "explained_variance_ratio": [
+        0.873636004910149,
+        0.032129127192937756,
+        0.027283738783748103,
+        0.024237355958266187,
+        0.020528004021454313,
+        0.012899650087957609,
+        0.009286119045486882
+      ],
+      "cumulative_variance": [
+        0.873636004910149,
+        0.9057651321030868,
+        0.933048870886835,
+        0.9572862268451011,
+        0.9778142308665554,
+        0.990713880954513,
+        0.9999999999999999
+      ],
+      "components_for_95pct": 4,
+      "components_for_99pct": 6
+    },
+    "combined": {
+      "standardized": true,
+      "explained_variance_ratio": [
+        0.35807698063696797,
+        0.31213966053299075,
+        0.08994221162000157,
+        0.08154603448365337,
+        0.06083775902134123,
+        0.04922099022399017,
+        0.01564049429434937,
+        0.014071252673896499,
+        0.010761899381034721,
+        0.005687123434963859,
+        0.0007104210811730294,
+        0.0006614670292418399,
+        0.0004391714385135131,
+        0.00026453414788242866
+      ],
+      "cumulative_variance": [
+        0.35807698063696797,
+        0.6702166411699587,
+        0.7601588527899603,
+        0.8417048872736137,
+        0.902542646294955,
+        0.9517636365189451,
+        0.9674041308132945,
+        0.981475383487191,
+        0.9922372828682257,
+        0.9979244063031896,
+        0.9986348273843626,
+        0.9992962944136045,
+        0.9997354658521179,
+        1.0000000000000004
+      ],
+      "components_for_95pct": 6,
+      "components_for_99pct": 9
+    },
+    "motion_residual": {
+      "standardized": false,
+      "explained_variance_ratio": [
+        0.2677207396087,
+        0.20321491692177163,
+        0.15998843309946237,
+        0.11484315797700163,
+        0.1029708747499179,
+        0.09405032766484399,
+        0.05721154997830253
+      ],
+      "cumulative_variance": [
+        0.2677207396087,
+        0.47093565653047165,
+        0.630924089629934,
+        0.7457672476069356,
+        0.8487381223568535,
+        0.9427884500216975,
+        1.0
+      ],
+      "components_for_95pct": 7,
+      "components_for_99pct": 7
+    }
+  },
+  "warnings": [
+    "episode_0004/wrist_camera: 5 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp",
+    "episode_0005/wrist_camera: 11 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp",
+    "episode_0010/wrist_camera: 4 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp",
+    "episode_0013/wrist_camera: 11 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp",
+    "episode_0016/wrist_camera: 5 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp",
+    "episode_0017/wrist_camera: 7 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp",
+    "episode_0019/wrist_camera: 8 frames arrive 1\u201310ms after the tick timestamp; latest camera is read after that timestamp"
+  ]
+}

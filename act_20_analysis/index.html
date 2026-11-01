@@ -1,0 +1,162 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ACT 20-episode analysis</title><style>body{font:16px/1.6 system-ui,sans-serif;color:#172735;background:#f5f7fa;margin:0}main{max-width:1200px;margin:auto;padding:32px}h1{font-size:34px}.verdict{padding:22px;background:#e3f3e9;border-left:5px solid #28784b;border-radius:8px}figure{background:white;margin:28px 0;padding:20px;border:1px solid #dde2e7;border-radius:8px}img{display:block;width:100%;height:auto}figcaption{padding-top:12px;color:#425466}pre{white-space:pre-wrap;font:14px/1.7 ui-monospace,monospace;background:white;padding:24px;border-radius:8px}a{color:#175c98}nav{margin:20px 0}</style>
+<main><h1>ACT 20-episode data analysis</h1><div class="verdict"><b>Suitable for the fixed A-to-B ACT smoke test.</b><br>20 episodes · 3,040 observations · 20 distinct seeds · no hard integrity failures.<br>Small camera acquisition timestamp skew is documented below.</div>
+<nav><a href="#assessment">Full assessment</a> · <a href="#plots">Plots</a> · <a href="#previews">RGB-D previews</a> · <a href="report.txt">Plain-text report</a> · <a href="metrics.json">Complete metrics</a></nav>
+<h2 id="assessment">Full assessment</h2><pre>ACT 20-EPISODE DATA AUDIT
+Source: /home/jaydv/code/prox_learning/submodules/prox_learning_real/recordings/act_test_20
+Assessment: suitable for the intended fixed-start, fixed-goal ACT overfit and rollout smoke test.
+No episode needs to be discarded on the audited motion or data-integrity criteria.
+No original recording was edited. All 20 episodes are included in every pooled analysis.
+
+SCOPE AND COUNTS
+20/20 successful episodes; 20 unique seeds and 20 unique perturbation coefficient sets.
+3,040 observations: 152 per episode, about 10.067 seconds each; 201.340 seconds in total.
+Every HDF5 depth frame was read: 12,146 frames at 640 x 480, uint16 mm.
+Every frame in all 80 video files was decoded: 18,226 video frames.
+RGB numeric checks cover all frames; visual review uses all-episode midpoint contact sheets
+plus five-timepoint RGB/depth previews for episodes 0, 10, and 19.
+
+MOTION AND ACTION LABELS
+Maximum observed tracking error over the batch: 0.008617 rad
+(0.494 degrees); below the configured 0.15 rad abort bound.
+Per-episode final goal error: 0.007523 to 0.008068 rad; all below 0.02 rad tolerance.
+Per-episode RMS tracking error across samples/joints: 0.003918 to 0.004090 rad.
+Largest measured joint speed: 0.060557 rad/s.
+Final maximum joint speeds: 0.000658 to 0.003154 rad/s; all arms settle at B.
+Action JSON matches real/target_q exactly. Each post-lead-in action matches the actual
+100 Hz reference active at that timestamp, and the analytically reconstructed seeded plan.
+qpos/qvel JSON matches raw joint state exactly; only seven arm joints, no gripper commands.
+All arrays used for motion analysis are finite. Robot/reference clocks are monotonic.
+No sampled joint positions violate the FR3 limits used by the collector.
+All terminal success/termination flags are consistent, with no fail flags.
+The last observation precedes the last sent reference by 47.0–57.5 ms: no shutdown drift.
+
+Positions are smooth overall. Joint 2 and 4 show repeatable small offsets under impedance
+control, and a small transient at controller entry near one second. These are actual measured
+behavior, not mislabeled waypoints. Joint 5 and 7 move mainly due to small perturbations;
+their measured velocity traces are noisier and show occasional small spikes. Peak measured
+speed stays below 0.061 rad/s. The RMS difference between reported velocity and a centered
+finite-difference position derivative is 0.00142–0.00201 rad/s per episode. No smoothing or
+outlier removal was applied. Joint statistics expose per-joint offsets and spreads.
+
+TIMING
+Nominal observation period is 66.667 ms (15 Hz); the largest interval is
+70.251 ms. No missing observation ticks are evident.
+Reference updates have approximately 10 ms median periods; largest interval is
+15.780 ms. These are host reference updates, not measurements of the 1 kHz internal torque loop.
+Camera frames run at approximately 33.3 ms (30 Hz), with zero frame-number drops in both cameras.
+The maximum difference between camera arrival times selected at one tick is
+28.573 ms. This is software alignment, not hardware-trigger synchronization.
+
+RGB-D VALIDITY
+Both cameras have stable serial numbers and intrinsics across all episodes, valid 640x480
+dimensions, and a recorded 0.001 m depth scale. Every episode&#x27;s 15 Hz RGB count is exactly
+152; its full-rate RGB count matches its depth frame count. All tick_frame indices are in bounds.
+No empty depth frames, blank RGB frames, or repeated adjacent decoded thumbnails were found.
+RGB tick images match their indexed full-rate images closely: worst mean thumbnail pixel
+difference is 0.961 on a 0–255 scale, consistent with separate lossy video encoders.
+
+wrist_camera:
+  Full-rate frames: 6,065; dropped frame numbers: 0.
+  Mean nonzero depth coverage per episode: 99.22%–99.30%.
+  Worst single-frame nonzero depth coverage: 98.39%.
+  Maximum sampled frame age: 35.030 ms.
+  Intrinsics fx/fy: 615.030/614.909 pixels.
+
+exo_camera_1:
+  Full-rate frames: 6,081; dropped frame numbers: 0.
+  Mean nonzero depth coverage per episode: 91.42%–91.54%.
+  Worst single-frame nonzero depth coverage: 90.13%.
+  Maximum sampled frame age: 34.722 ms.
+  Intrinsics fx/fy: 612.670/613.452 pixels.
+
+The wrist&#x27;s tabletop view has high depth coverage. The external camera includes farther
+backgrounds and reflective/invalid regions, so its lower coverage is plausible and stable.
+External returns beyond 10 m occupy at most about 0.405% of an image; saturated 65535-mm
+pixels occupy at most 0.052%. These are localized and do not invalidate the whole frame.
+The exocentric view crops much of the arm, and tabletop objects leave the wrist view near B.
+This is acceptable for the stated motion smoke test, but matters for future vision-dependent tasks.
+
+TIMESTAMP CAVEAT (KEEP THE DATA)
+51 of 3,040 wrist observations use a camera frame arriving 1–4.706 ms after the tick timestamp,
+spread over episodes 4, 5, 10, 13, 16, 17, and 19. The collector timestamps the tick before
+reading camera.latest(), so a new frame can arrive during the observation-acquisition window.
+All corresponding RGB/depth indices remain valid, with RGB image agreement within codec loss.
+This is acquisition-window skew, not evidence of wrong depth frame selection. Metrics retain
+the signed ages and seven sequence warnings. For stricter future sensor fusion, timestamp
+each modality separately or explicitly choose frames no later than the observation timestamp.
+Do not reinterpret this run as sub-millisecond synchronized RGB-D/robot measurements.
+
+Depth tests establish data integrity, range plausibility, coverage and temporal consistency.
+Absolute depth accuracy and subpixel RGB/depth registration cannot be certified without a
+known-distance calibration target. Intrinsics are present; camera-to-robot and inter-camera
+extrinsic calibration are not validated here.
+
+PROXIMITY
+All 40 configured arm sensors are present in a consistent order, without missing or negative
+packet ages. Median packet age is 63.56 ms; 95th percentile 164.45 ms; worst case 604.49 ms.
+The sensors update more slowly than the policy clock, so held values are expected. This
+does not block RGB + joint-state ACT, but latency should be modeled if proximity is used
+for fast feedback. Sensor index/name, age, and freshness are saved in sensor_statistics.csv.
+
+PCA METHOD AND INTERPRETATION
+PCA mean-centers observations, forms an SVD X = U S V^T, and reports eigenvalue proportions
+S^2 / sum(S^2). Components are orthonormal linear directions; scores are the observations
+projected onto those directions. Directions have arbitrary signs. Full-component reconstruction
+was checked numerically (maximum error below 1.3e-14, in the corresponding scaled coordinates).
+This is descriptive analysis: temporally neighboring observations are correlated.
+
+Position PCA: mean-centered seven joint positions in radians, no per-joint standardization.
+PC1 explains 99.344%; one component exceeds both 95% and 99% retained variance. This is
+expected: all demonstrations share one A-to-B progression. High PC1 variance is not proof of
+bad data or of 20 duplicated trajectories.
+
+Velocity PCA: mean-centered seven joint velocities in rad/s, no standardization.
+PC1 explains 87.364%; four components retain 95.729%, and six retain 99.071%.
+
+Combined state PCA: seven positions plus seven velocities, each standardized to unit SD
+before SVD, so the two physical units are not directly mixed. PC1/PC2 explain 35.808%/31.214%
+(67.022% together). Six components retain 95.176%; nine retain 99.224%. Standardization gives
+small-excursion joints equal feature weight, so do not compare this percentage directly to
+the unscaled position PCA as though they used the same metric.
+
+Residual PCA: each measured trajectory is resampled to 121 equal motion-phase points, then
+the analytical noise-free A-to-B path is subtracted. The residual includes injected variation,
+tracking error and controller bias. PC1 explains 26.772%; PC1+PC2 explain 47.094%. All seven
+components are needed for 95% variance (six retain 94.279%). Thus residual variation spans
+all seven joint directions. This does not imply arbitrary seven-dimensional task coverage.
+
+Peak action perturbations vary from 0.00972 to 0.02328 rad across episodes. Phase-aligned
+mean position SD is about 0.0027–0.0039 rad per joint, with larger mid-motion spread and small
+endpoint spread. The run provides real, reproducible variation around a narrow common task.
+
+TRAINING READINESS
+Use this dataset for the intended small ACT training/rollout test. Start with two episodes
+to verify overfitting, then use an episode-level split such as 16 training / 4 validation.
+Compute normalization statistics on the training episodes only; do not split frames from
+the same episode across train and validation. Keep the deployment controller/reference
+units and observation preprocessing consistent. Raw records contain seven arm joints;
+the existing converter may still pad gripper dimensions, which an arm-only setup should omit.
+Check the training loader&#x27;s action time shift because these rows label the active command,
+not a next-step state or the terminal waypoint. PCA here is a diagnostic; no PCA preprocessing
+or reduction is required for the ACT model.
+
+The dataset has one start, one goal, one scene and short trajectories. It can verify pipeline
+operation and repeatability, but cannot establish arbitrary-goal generation, obstacle avoidance,
+visual reliance, or broad generalization. No action or sensor value was modified by this audit.
+
+FILES AND REPRODUCTION
+12 numbered figure sets, each PNG plus vector PDF; RGB/depth previews; all-episode RGB contact sheets.
+metrics.json: complete per-episode and per-camera metrics, checks, and timing warnings.
+episode_statistics.csv, joint_statistics.csv, camera_statistics.csv, sensor_statistics.csv.
+pca_*_components.csv: variance ratios and orthonormal component coefficients.
+analysis_arrays.npz: joint arrays, phase-aligned states, PCA means/scales/scores and depth histograms.
+camera_series.json: per-frame depth coverage and timestamps.
+analyze.py reads raw data only; plot_analysis.py renders saved arrays; make_report.py builds this report.
+On this machine, run from the repository root:
+  /usr/bin/python3 act_20_analysis/analyze.py
+  MPLCONFIGDIR=/tmp/act20_matplotlib /usr/bin/python3 -s act_20_analysis/plot_analysis.py
+  /usr/bin/python3 act_20_analysis/make_report.py
+The -s plotting invocation uses system Matplotlib/NumPy, avoiding a conflicting user-installed Matplotlib.
+</pre><h2 id="plots">Plots</h2><figure><h2>Joint positions: all 20 episodes and executed references</h2><a href="01_joint_positions.png"><img loading="lazy" src="01_joint_positions.png" alt="Joint positions: all 20 episodes and executed references"></a><figcaption>Absolute joint coordinates; shared endpoints and smooth motion should form a narrow bundle. No episode was removed. <a href="01_joint_positions.pdf">PDF</a></figcaption></figure><figure><h2>Measured joint velocities: all 20 episodes</h2><a href="02_joint_velocities.png"><img loading="lazy" src="02_joint_velocities.png" alt="Measured joint velocities: all 20 episodes"></a><figcaption>Absolute joint coordinates; shared endpoints and smooth motion should form a narrow bundle. No episode was removed. <a href="02_joint_velocities.pdf">PDF</a></figcaption></figure><figure><h2>Joint position and velocity distributions</h2><a href="03_joint_distributions.png"><img loading="lazy" src="03_joint_distributions.png" alt="Joint position and velocity distributions"></a><figcaption>Pooled observations, including lead-in and hold; dashed line is median. Peaks near zero velocity and endpoints are expected. Samples are temporally correlated, not independent trials. <a href="03_joint_distributions.pdf">PDF</a></figcaption></figure><figure><h2>Between-episode variation at the same motion phase</h2><a href="04_phase_aligned_variation.png"><img loading="lazy" src="04_phase_aligned_variation.png" alt="Between-episode variation at the same motion phase"></a><figcaption>Each motion is resampled to 121 points between A and B. Navy shows mean ± one population standard deviation across episodes; this is a descriptive spread, not a confidence interval. <a href="04_phase_aligned_variation.pdf">PDF</a></figcaption></figure><figure><h2>Joint correlations</h2><a href="05_joint_correlations.png"><img loading="lazy" src="05_joint_correlations.png" alt="Joint correlations"></a><figcaption>Correlations reflect the shared A-to-B task and added perturbations; they do not establish causal dependence. <a href="05_joint_correlations.pdf">PDF</a></figcaption></figure><figure><h2>PCA of measured joint positions and velocities</h2><a href="06_position_velocity_pca.png"><img loading="lazy" src="06_position_velocity_pca.png" alt="PCA of measured joint positions and velocities"></a><figcaption>Each 7D dataset is mean-centered and analyzed separately by SVD without standardizing joints. Position PCA uses rad; velocity PCA uses rad/s. Motion phase colors reveal the dominant task trajectory. <a href="06_position_velocity_pca.pdf">PDF</a></figcaption></figure><figure><h2>PCA of combined position and velocity state</h2><a href="07_combined_state_pca.png"><img loading="lazy" src="07_combined_state_pca.png" alt="PCA of combined position and velocity state"></a><figcaption>All 14 features are standardized individually to zero mean and unit population SD before SVD, preventing radians and radians/second from being mixed directly. Low-variance joints receive equal weight after standardization. <a href="07_combined_state_pca.pdf">PDF</a></figcaption></figure><figure><h2>PCA after subtracting the shared nominal A-to-B path</h2><a href="08_motion_residual_pca.png"><img loading="lazy" src="08_motion_residual_pca.png" alt="PCA after subtracting the shared nominal A-to-B path"></a><figcaption>Measured position minus analytical noise-free path, resampled to equal motion phases. These residuals include injected variation, controller bias, and tracking error. PCA is mean-centered, unscaled. This reveals variation hidden by the dominant common trajectory. <a href="08_motion_residual_pca.pdf">PDF</a></figcaption></figure><figure><h2>Motion and recording quality by episode</h2><a href="09_episode_quality.png"><img loading="lazy" src="09_episode_quality.png" alt="Motion and recording quality by episode"></a><figcaption>Negative final timestamp differences confirm that recorded observations finish while the reference stream is still active. All seeds and all episodes are included. <a href="09_episode_quality.pdf">PDF</a></figcaption></figure><figure><h2>RGB-D coverage, timing, and stream association</h2><a href="10_rgbd_quality.png"><img loading="lazy" src="10_rgbd_quality.png" alt="RGB-D coverage, timing, and stream association"></a><figcaption>Every depth frame and every video frame was read. RGB association compares decoded 160×120 thumbnails; small differences are expected because the two videos are encoded independently. Nonzero depth coverage is a validity check, not proof of metric accuracy. <a href="10_rgbd_quality.pdf">PDF</a></figcaption></figure><figure><h2>Depth distributions across every recorded pixel</h2><a href="11_depth_distributions.png"><img loading="lazy" src="11_depth_distributions.png" alt="Depth distributions across every recorded pixel"></a><figcaption>Depth is uint16 millimeters aligned to color. Zero pixels are excluded here and reported separately. The exocentric camera sees a farther background than the wrist camera; distant returns alone are not considered corruption. <a href="11_depth_distributions.pdf">PDF</a></figcaption></figure><figure><h2>Proximity telemetry quality</h2><a href="12_proximity_quality.png"><img loading="lazy" src="12_proximity_quality.png" alt="Proximity telemetry quality"></a><figcaption>Sensor values are latest-packet sample-and-hold. Sensor update rates are slower than the 15 Hz policy clock; repeated readings are expected. Camera and robot validity do not imply high-rate proximity sensing. <a href="12_proximity_quality.pdf">PDF</a></figcaption></figure><h2 id="previews">All-episode RGB overview and RGB-D previews</h2><figure><h3>overview_exo_camera_1_all_episodes</h3><img loading="lazy" src="overview_exo_camera_1_all_episodes.jpg" alt="All episodes at motion midpoint"></figure><figure><h3>overview_wrist_camera_all_episodes</h3><img loading="lazy" src="overview_wrist_camera_all_episodes.jpg" alt="All episodes at motion midpoint"></figure><figure><h3>preview_ep00_exo_camera_1</h3><img loading="lazy" src="preview_ep00_exo_camera_1.jpg" alt="RGB and depth preview"></figure><figure><h3>preview_ep00_wrist_camera</h3><img loading="lazy" src="preview_ep00_wrist_camera.jpg" alt="RGB and depth preview"></figure><figure><h3>preview_ep10_exo_camera_1</h3><img loading="lazy" src="preview_ep10_exo_camera_1.jpg" alt="RGB and depth preview"></figure><figure><h3>preview_ep10_wrist_camera</h3><img loading="lazy" src="preview_ep10_wrist_camera.jpg" alt="RGB and depth preview"></figure><figure><h3>preview_ep19_exo_camera_1</h3><img loading="lazy" src="preview_ep19_exo_camera_1.jpg" alt="RGB and depth preview"></figure><figure><h3>preview_ep19_wrist_camera</h3><img loading="lazy" src="preview_ep19_wrist_camera.jpg" alt="RGB and depth preview"></figure>
+<h2>Data tables</h2><p><a href="episode_statistics.csv">Episode statistics</a> · <a href="joint_statistics.csv">Joint statistics</a> · <a href="camera_statistics.csv">Camera statistics</a> · <a href="sensor_statistics.csv">Sensor statistics</a></p></main></html>
