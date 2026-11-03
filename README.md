@@ -13,6 +13,64 @@ git submodule update --init --recursive    # franky 2.0 (build it per submodules
 pip install pyrealsense2 "imageio[ffmpeg]" h5py numpy
 ```
 
+## Lab PC: first ACT rollout after pulling
+
+Run these commands from the `prox_learning_real` directory in your working Franky
+Python environment. No parent `prox_learning` checkout is required.
+
+1. Fetch the model weights and install the evaluation dependencies:
+
+   ```bash
+   git lfs pull
+   python -m pip install -r requirements-eval.txt
+   ```
+
+   Keep the working local Franky installation that exposes `JointImpedanceTracker`.
+   If it is missing, follow the build instructions in [LAB_SETUP.txt](LAB_SETUP.txt).
+
+2. Check dependencies and load the model without connecting to the robot or cameras:
+
+   ```bash
+   python check_lab_setup.py
+   python eval_act_real.py --check-model --device cpu
+   ```
+
+   The setup check should pass. The model check should report `"finite": true`,
+   `"action_shape": [50, 8]`, and `"hardware_connected": false`. If either check
+   fails, resolve the reported error before starting a rollout. A Git LFS pointer
+   error means the actual checkpoint still needs to be fetched with `git lfs pull`.
+
+3. Enable FCI, clear the trained motion and reset path, and run one evaluation:
+
+   ```bash
+   python eval_act_real.py \
+     --wrist-serial 836612071883 \
+     --exo-serial 943222071556 \
+     --output eval_rollouts/trial_01
+   ```
+
+   **This command moves the arm to training start A, then executes the policy.**
+   The serials must correspond to the original wrist and exocentric views. The
+   evaluator does not connect to or command a gripper. Use Ctrl-C to abort.
+   Choose a new output directory for each trial; existing directories are rejected.
+
+4. Inspect the result:
+
+   ```bash
+   cat eval_rollouts/trial_01/result.json
+   ```
+
+   Check `success`, `error`, `final_goal_error_rad`, `final_max_speed_rad_s`, and
+   `query_latency_s`. Success requires goal error at most 0.02 rad and joint speed
+   at most 0.01 rad/s throughout the final 0.5 seconds. `rollout.h5` contains the
+   measured states, camera inputs, policy actions and actual controller references;
+   `config.json` records the model and execution settings. Inspect a failed trial's
+   error and logs before repeating it. The stopping motion is excluded from the
+   recorded evaluation.
+
+See [Evaluate the trained ACT policy on the real arm](#evaluate-the-trained-act-policy-on-the-real-arm)
+below for checkpoint selection, control limits and inference options.
+
 ## Demonstrations: kinesthetic teach, then replay
 
 ```bash
