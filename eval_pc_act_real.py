@@ -6,6 +6,7 @@ avoidance, a robot-clearance estimate, or a certified collision-prevention syste
 """
 from collections import deque
 import hashlib
+import csv
 import json
 import os
 from pathlib import Path
@@ -90,7 +91,7 @@ class LiveSkinContext:
         if self.background.shape!=(40,8,8) or not np.isfinite(self.background).all():
             raise ValueError('invalid background proximity profile')
 
-    def setup(self,cleanup):
+    def setup(self,cleanup,diagnostic=False):
         if self.listener is None:
             sockets=base.open_sensor_sockets()
             for sock in sockets:cleanup.callback(sock.close)
@@ -98,8 +99,8 @@ class LiveSkinContext:
             self.listener.start()
             cleanup.callback(self.listener.join,1.0)
             cleanup.callback(self.listener.stop_event.set)
-        base.wait_for_sensors(self.listener,self.args.sensor_warmup,False)
-        self.control_guard()
+        base.wait_for_sensors(self.listener,self.args.sensor_warmup,diagnostic)
+        if not diagnostic:self.control_guard()
 
     def _abort(self,reason,snapshot=None,**details):
         if self.trigger is None:
@@ -107,33 +108,42 @@ class LiveSkinContext:
             self.events.append(self.trigger)
         raise ProximityAbort(json.dumps(self.trigger))
 
-    def read(self):
-        with self.lock:return self._read()
+    def read(self,diagnostic=False):
+        with self.lock:return self._read(diagnostic)
 
-    def _read(self):
-        if self.trigger is not None:raise ProximityAbort(json.dumps(self.trigger))
+    def _read(self,diagnostic=False):
+        if self.trigger is not None and not diagnostic:raise ProximityAbort(json.dumps(self.trigger))
         packets=self.listener.snapshot();now=time.monotonic()
-        depth=np.empty((40,128),np.uint16);ages=np.empty(40,np.float32);counts=np.empty(40,np.int64)
+        depth=np.full((40,128),4000,np.uint16);ages=np.full(40,np.nan,np.float32);counts=np.zeros(40,np.int64)
+        faults=[None]*40
         for i,key in enumerate(self.keys):
-            if key not in packets:self._abort('missing_sensor',sensor=NAMES[i])
+            if key not in packets:
+                if not diagnostic:self._abort('missing_sensor',sensor=NAMES[i])
+                faults[i]='missing';continue
             raw,arrived,count=packets[key]
-            if np.shape(raw)!=(128,):self._abort('invalid_sensor_packet',sensor=NAMES[i])
-            depth[i]=raw;ages[i]=(now-arrived)*1000;counts[i]=count
+            ages[i]=(now-arrived)*1000;counts[i]=count
+            if np.shape(raw)!=(128,):
+                if not diagnostic:self._abort('invalid_sensor_packet',sensor=NAMES[i])
+                faults[i]='bad_packet';continue
+            depth[i]=raw
             if ages[i]<0 or ages[i]>self.args.sensor_timeout*1000:
-                self._abort('stale_sensor',sensor=NAMES[i],age_ms=float(ages[i]))
+                if not diagnostic:self._abort('stale_sensor',sensor=NAMES[i],age_ms=float(ages[i]))
+                faults[i]='stale'
         meters=depth[:,:64].reshape(40,8,8).astype(np.float32)/1000
         meters[(meters<=0)|(meters>=4)]=4.
-        valid=(meters>=.005)&(meters<4)
+        usable=np.asarray([fault is None for fault in faults])
+        valid=(meters>=.005)&(meters<4)&usable[:,None,None]
         novel=valid&(meters<self.background-self.args.guard_drop_m)
         close=novel&(meters<=self.args.stop_distance_m)
         snapshot=dict(depth_mm=depth.reshape(40,2,8,8),depth_m=meters,age_ms=ages,count=counts,
-                      time=now,novel=novel,close=close)
+                      time=now,novel=novel,close=close,faults=faults)
         self.last_snapshot=snapshot
         if valid.any():self.min_raw=min(self.min_raw,float(meters[valid].min()))
         if novel.any():self.min_novel=min(self.min_novel,float(meters[novel].min()))
         sensor_counts=close.sum(axis=(1,2))
         triggered=np.flatnonzero(sensor_counts>=self.args.guard_min_zones)
-        if len(triggered):
+        snapshot['guard_sensors']=[NAMES[i] for i in triggered]
+        if len(triggered) and not diagnostic:
             i=int(triggered[np.argmax(sensor_counts[triggered])])
             self._abort('novel_proximity',snapshot,sensor=NAMES[i],zones=int(sensor_counts[i]),
                         distance_m=float(meters[i][close[i]].min()),
@@ -253,30 +263,80 @@ def configure(parser):
     parser.add_argument('--guard-baseline',type=Path,help='defaults to guard_baseline.npz inside checkpoint directory')
     parser.add_argument('--compare-clear',action='store_true',help='offline only: compare policy chunks with all-clear proximity')
     parser.add_argument('--sensor-check',action='store_true',help='read live UDP sensors and guard status; no robot, cameras or model')
+    parser.add_argument('--sensor-check-interval',type=float,default=1.,help='seconds between full 40-sensor diagnostic tables')
+
+
+def diagnostic_rows(snapshot,min_zones):
+    rows=[]
+    for i,name in enumerate(NAMES):
+        depth=snapshot['depth_m'][i]
+        valid=(depth>=.005)&(depth<4)
+        fault=snapshot['faults'][i]
+        close=int(snapshot['close'][i].sum())
+        rows.append(dict(sensor=name,status=(fault or 'live').upper(),packets=int(snapshot['count'][i]),
+            age_ms=float(snapshot['age_ms'][i]) if np.isfinite(snapshot['age_ms'][i]) else None,
+            nearest_mm=float(depth[valid].min()*1000) if valid.any() and fault is None else None,
+            novel_zones=int(snapshot['novel'][i].sum()),close_zones=close,
+            guard_would_trigger=bool(fault is None and close>=min_zones)))
+    return rows
 
 
 def sensor_check(args):
     from contextlib import ExitStack
     context=LiveSkinContext(args)
+    output=args.output or ROOT/'eval_rollouts'/act.datetime.now(act.timezone.utc).strftime('sensor_check_%Y%m%dT%H%M%S%fZ')
+    output.mkdir(parents=True,exist_ok=False)
+    totals={name:dict(sensor=name,seen_packets=False,live_snapshots=0,missing_snapshots=0,
+        stale_snapshots=0,bad_packet_snapshots=0,packets=0,minimum_mm=None,
+        novel_return_observed=False,guard_would_trigger=False,last_status='MISSING') for name in NAMES}
+    frames=0
     print('Live sensor/guard check only. No robot or camera connections will be made.',flush=True)
+    print('Diagnostic mode continues after guard indications. Move the object past each sensor to check its response.',flush=True)
     try:
         with ExitStack() as cleanup:
-            context.setup(cleanup)
+            context.setup(cleanup,diagnostic=True)
             deadline=time.monotonic()+args.duration
-            while time.monotonic()<deadline:
-                snapshot=context.read();novel=snapshot['novel'];depth=snapshot['depth_m']
-                print(json.dumps(dict(max_age_ms=float(snapshot['age_ms'].max()),
-                    nearest_valid_m=float(depth[(depth>=.005)&(depth<4)].min()) if ((depth>=.005)&(depth<4)).any() else None,
-                    nearest_novel_m=float(depth[novel].min()) if novel.any() else None,
-                    novel_zones=int(novel.sum()),guard_triggered=False)),flush=True)
-                time.sleep(.2)
-    except ProximityAbort:
-        print(json.dumps(dict(robot_connected=False,cameras_connected=False,guard_would_abort=context.trigger),indent=2))
+            with (output/'snapshots.jsonl').open('w') as log:
+                while time.monotonic()<deadline:
+                    snapshot=context.read(diagnostic=True)
+                    rows=diagnostic_rows(snapshot,args.guard_min_zones);frames+=1
+                    live=sum(row['status']=='LIVE' for row in rows)
+                    triggers=[row['sensor'] for row in rows if row['guard_would_trigger']]
+                    print(f'\nSnapshot {frames}: {live}/40 LIVE; guard indications: {", ".join(triggers) or "none"}',flush=True)
+                    print(f'{"SENSOR":25} {"STATUS":10} {"PACKETS":>8} {"AGE ms":>8} {"MIN mm":>8} {"NOVEL":>6} {"CLOSE":>6} {"GUARD":>6}',flush=True)
+                    for row in rows:
+                        age='--' if row['age_ms'] is None else f'{row["age_ms"]:.0f}'
+                        near='--' if row['nearest_mm'] is None else f'{row["nearest_mm"]:.0f}'
+                        print(f'{row["sensor"]:25} {row["status"]:10} {row["packets"]:8d} {age:>8} {near:>8} '
+                              f'{row["novel_zones"]:6d} {row["close_zones"]:6d} {"YES" if row["guard_would_trigger"] else "-":>6}',flush=True)
+                        total=totals[row['sensor']];total['last_status']=row['status']
+                        total[row['status'].lower()+'_snapshots']+=1
+                        total['seen_packets']|=row['packets']>0
+                        total['packets']=max(total['packets'],row['packets'])
+                        if row['nearest_mm'] is not None:
+                            total['minimum_mm']=row['nearest_mm'] if total['minimum_mm'] is None else min(total['minimum_mm'],row['nearest_mm'])
+                        total['novel_return_observed']|=row['novel_zones']>0
+                        total['guard_would_trigger']|=row['guard_would_trigger']
+                    log.write(json.dumps(dict(monotonic_time=snapshot['time'],sensors=rows))+'\n');log.flush()
+                    remaining=deadline-time.monotonic()
+                    if remaining>0:time.sleep(min(args.sensor_check_interval,remaining))
+    except KeyboardInterrupt:
+        print('\nSensor check stopped.',flush=True)
+    finally:
+        rows=list(totals.values())
+        summary=dict(robot_connected=False,cameras_connected=False,snapshots=frames,sensor_count=40,
+            sensors_with_packets=sum(r['seen_packets'] for r in rows),
+            sensors_with_novel_returns=sum(r['novel_return_observed'] for r in rows),sensors=rows,
+            note='Packets verify reception. Novel returns show background-relative changes; physical coverage and correct hardware ID mapping require checking each sensor with an object.')
+        (output/'sensor_check.json').write_text(json.dumps(summary,indent=2)+'\n')
+        with (output/'sensor_check.csv').open('w',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
+        print(f'Saved all 40 sensor summaries to {output}',flush=True)
 
 
 def main(argv=None):
     args=act.parse_args(argv,configure)
-    for key in ['sensor_timeout','sensor_warmup','stop_distance_m','guard_drop_m']:
+    for key in ['sensor_timeout','sensor_warmup','stop_distance_m','guard_drop_m','sensor_check_interval']:
         if not np.isfinite(getattr(args,key)) or getattr(args,key)<=0:raise ValueError(f'{key} must be positive and finite')
     if not 1<=args.guard_min_zones<=64:raise ValueError('guard-min-zones must be 1..64')
     if args.compare_clear and not args.offline_row:raise ValueError('compare-clear is an offline diagnostic')

@@ -98,7 +98,11 @@ PC-ACT obstacle probe
     python eval_pc_act_real.py --reset-only
   Place a soft, fixed test object with stopping clearance, out of both camera views.
   First check the incoming sensors without moving the arm:
-    python eval_pc_act_real.py --sensor-check --duration 20
+    python eval_pc_act_real.py --sensor-check --duration 120 \
+      --output eval_rollouts/sensor_check_all_40_01
+  This displays all 40 sensors and continues after individual guard indications,
+  so you can move the object past multiple sensors in the same diagnostic run.
+  Missing/stale streams and per-sensor responses are saved as CSV/JSON summaries.
   The real rollout requires the arm already at A and does not reset by default:
     python eval_pc_act_real.py \
       --wrist-serial 836612071883 --exo-serial 943222071556 \

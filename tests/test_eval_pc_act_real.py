@@ -6,6 +6,8 @@ import time
 from types import SimpleNamespace
 import unittest
 import sys
+import io
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 import h5py
@@ -91,6 +93,60 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(events[0]['reason'],'novel_proximity')
             with h5py.File(out/'rollout.h5') as f:
                 self.assertEqual(f['guard/trigger_depth_mm'].shape,(40,2,8,8))
+
+    def test_diagnostic_reports_all_triggering_sensors_without_latching_abort(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,depth=self.context(temp)
+            depth[0,:2]=40;depth[17,:3]=50
+            x=c.read(diagnostic=True)
+            self.assertEqual(x['guard_sensors'],[pc.NAMES[0],pc.NAMES[17]])
+            self.assertIsNone(c.trigger)
+            rows=pc.diagnostic_rows(x,2)
+            self.assertEqual(len(rows),40)
+            self.assertEqual(sum(row['guard_would_trigger'] for row in rows),2)
+            # Rollout mode still aborts on the same readings.
+            with self.assertRaises(pc.ProximityAbort):c.control_guard()
+
+    def test_diagnostic_shows_missing_and_stale_sensors_instead_of_exiting(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,_=self.context(temp)
+            original=c.listener.snapshot
+            def snapshot():
+                values=original();values.pop(c.keys[3])
+                raw,arrived,count=values[c.keys[8]]
+                values[c.keys[8]]=(raw,arrived-2,count)
+                return values
+            c.listener.snapshot=snapshot
+            rows=pc.diagnostic_rows(c.read(diagnostic=True),2)
+            self.assertEqual(len(rows),40)
+            self.assertEqual(rows[3]['status'],'MISSING')
+            self.assertEqual(rows[8]['status'],'STALE')
+            self.assertEqual(sum(row['status']=='LIVE' for row in rows),38)
+
+    def test_sensor_check_continues_after_first_sensor_and_saves_all_40(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,depth=self.context(temp)
+            c.args.output=Path(temp)/'check';c.args.duration=.025;c.args.sensor_check_interval=.01
+            original=c.listener.snapshot;calls=[0];clock=[1000.]
+            def snapshot():
+                depth[:]=4000
+                depth[0 if calls[0]==0 else 9,:2]=40
+                calls[0]+=1
+                return original()
+            c.listener.snapshot=snapshot
+            with patch.object(pc,'LiveSkinContext',return_value=c),\
+                 patch.object(pc.time,'monotonic',side_effect=lambda:clock[0]),\
+                 patch.object(pc.time,'sleep',side_effect=lambda dt:clock.__setitem__(0,clock[0]+dt)),\
+                 redirect_stdout(io.StringIO()) as output:
+                pc.sensor_check(c.args)
+            result=json.loads((c.args.output/'sensor_check.json').read_text())
+            self.assertEqual(result['sensor_count'],40)
+            self.assertEqual(result['sensors_with_packets'],40)
+            self.assertEqual(result['snapshots'],3)
+            self.assertTrue(result['sensors'][0]['guard_would_trigger'])
+            self.assertTrue(result['sensors'][9]['guard_would_trigger'])
+            self.assertIn(pc.NAMES[-1],output.getvalue())
+            self.assertEqual(len((c.args.output/'snapshots.jsonl').read_text().splitlines()),3)
 
 
 class RealLoopTests(unittest.TestCase):

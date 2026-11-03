@@ -71,6 +71,59 @@ Python environment. No parent `prox_learning` checkout is required.
 See [Evaluate the trained ACT policy on the real arm](#evaluate-the-trained-act-policy-on-the-real-arm)
 below for checkpoint selection, control limits and inference options.
 
+## Lab PC: PC-ACT evaluation commands
+
+Run from `prox_learning_real` in the working Franky environment. The paired PC-ACT
+model and background profile must be present in `models/pc_act_test_20`.
+
+```bash
+git lfs pull
+
+# Check the paired policy/encoder; no robot or camera connections:
+python eval_pc_act_real.py --check-model --device cpu
+
+# Remove the obstacle and clear the reset path, then move to A and exit:
+python eval_pc_act_real.py --reset-only
+
+# With the arm stationary, pass the test object near each sensor:
+python eval_pc_act_real.py --sensor-check --duration 120 \
+  --sensor-check-interval 1 --output eval_rollouts/sensor_check_all_40_01
+
+# Position the soft, fixed test obstacle and run with live proximity:
+python eval_pc_act_real.py \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --proximity-mode live --output eval_rollouts/pc_act_obstacle_live_01
+```
+
+Sensor-check prints all 40 sensors every second and continues when one or more
+sensors indicate the guard would trigger. Each row shows `LIVE`, `MISSING`,
+`STALE`, or `BAD_PACKET`, packet count, packet age, nearest valid distance, novel
+zones, close zones and guard indication. `LIVE` confirms fresh telemetry; check
+the individual rows while moving the object to verify physical sensor responses.
+It saves `sensor_check.csv`, `sensor_check.json`, and `snapshots.jsonl` in the
+requested output folder. Guard indications do not end diagnostic mode. The guard
+still aborts a real rollout on a trigger or sensor fault.
+
+For a matched cleared-proximity trial, remove the obstacle, reset, then restore
+the same obstacle position before running the final command:
+
+```bash
+# Run with the obstacle removed:
+python eval_pc_act_real.py --reset-only
+
+# Restore the test obstacle, then run:
+python eval_pc_act_real.py \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --proximity-mode clear --output eval_rollouts/pc_act_obstacle_clear_01
+```
+
+Use new output folders for subsequent trials. Both modes log real sensor data and
+keep the independent guard active. Compare `result.json`, `sensor_events.json`,
+and `rollout.h5`. Guard stops are reported separately from policy actions; the
+checkpoint's proximity sensitivity is small, so do not rely on it to avoid the
+object. See [the detailed PC-ACT evaluation notes](#real-pc-act-evaluation-with-an-off-camera-obstacle)
+for thresholds, timing and log fields. No gripper is connected or commanded.
+
 ## Demonstrations: kinesthetic teach, then replay
 
 ```bash
@@ -296,8 +349,9 @@ python eval_pc_act_real.py --check-model --device cpu
 # Move to A with the obstacle removed and the reset path clear, then exit:
 python eval_pc_act_real.py --reset-only
 
-# After positioning the test object, verify live sensor readings without moving:
-python eval_pc_act_real.py --sensor-check --duration 20
+# With the arm stationary, check each sensor without moving the robot:
+python eval_pc_act_real.py --sensor-check --duration 120 \
+  --output eval_rollouts/sensor_check_all_40_01
 
 # Run one PC-ACT rollout; the arm must already be at A:
 python eval_pc_act_real.py \
