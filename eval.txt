@@ -1,0 +1,18 @@
+(franky) jaydv@verstappen:~/prox_learning_real$ python eval_act_real.py   --wrist-serial 836612071883   --exo-serial 943222071556   --output eval_rollouts/trial_01_vd
+robot control on CPU [7, 15], recording on the other 14
+number of parameters: 83.89M
+ACT: state=9, action=8, chunk=50, query_every=50, cameras=['exo_camera_1', 'wrist_camera'], RGB=320x240, device=cpu
+resetting cameras 836612071883, 943222071556
+Moving to training start A, outside rollout.
+t=0.0s goal error=0.1997 rad
+t=1.0s goal error=0.1393 rad
+t=2.0s goal error=0.0930 rad
+t=3.0s goal error=0.0576 rad
+t=4.0s goal error=0.0204 rad
+t=5.0s goal error=0.0076 rad
+t=6.0s goal error=0.0051 rad
+t=7.0s goal error=0.0055 rad
+t=8.0s goal error=0.0052 rad
+t=9.0s goal error=0.0056 rad
+t=10.0s goal error=0.0055 rad
+saved eval_rollouts/trial_01_vd; success=True
