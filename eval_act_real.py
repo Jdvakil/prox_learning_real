@@ -60,7 +60,7 @@ def state_vector(q, dimension):
 class ACTInference:
     """Inference-only ACT builder: no optimizer, implicit CUDA, downloads or argv parsing."""
 
-    def __init__(self, args):
+    def __init__(self, args, proximity_encoder=None):
         import torch
 
         self.torch = torch
@@ -69,7 +69,8 @@ class ACTInference:
         if self.device.startswith("cuda") and not torch.cuda.is_available():
             raise ValueError("CUDA requested but unavailable")
         self.config = read_training_config(args.ckpt_dir, args.policy_config)
-        if (args.ckpt_dir / "prox_config.json").exists() or self.config.get("n_proximity_sensors", 0):
+        self.proximity_encoder = proximity_encoder
+        if proximity_encoder is None and ((args.ckpt_dir / "prox_config.json").exists() or self.config.get("n_proximity_sensors", 0)):
             raise ValueError("this evaluator supports vanilla RGB ACT; PACT needs its trained proximity encoder")
         checkpoint = args.ckpt_dir / args.ckpt_name
         with checkpoint.open("rb") as f:
@@ -132,11 +133,13 @@ class ACTInference:
         model_args.state_dim, model_args.action_dim = self.state_dim, self.action_dim
         model_args.num_queries = self.chunk_size
         model_args.camera_names = self.camera_names
-        model_args.n_proximity_sensors = 0
+        model_args.n_proximity_sensors = self.config.get("n_proximity_sensors",0) if proximity_encoder is not None else 0
         # The local builder never downloads weights or imports training infrastructure.
         model = build_model(vars(model_args))
         model.load_state_dict({k.removeprefix("model."): v for k, v in state.items()}, strict=True)
         self.model = model.to(self.device).eval()
+        if proximity_encoder is not None:
+            self.proximity_encoder.to(self.device).eval()
         self.mean = torch.tensor([.485, .456, .406], device=self.device).view(1, 1, 3, 1, 1)
         self.std = torch.tensor([.229, .224, .225], device=self.device).view(1, 1, 3, 1, 1)
         self.query_every = 1 if args.temporal_agg else (args.query_every or self.chunk_size)
@@ -158,7 +161,7 @@ class ACTInference:
             frames.append(rgb)
         return np.stack(frames)
 
-    def predict(self, q, rgb):
+    def predict(self, q, rgb, proximity=None):
         torch = self.torch
         state = state_vector(q, self.state_dim)
         state = (state - self.stats["qpos_mean"]) / self.stats["qpos_std"]
@@ -166,7 +169,12 @@ class ACTInference:
         with torch.inference_mode():
             state_t = torch.as_tensor(state, device=self.device).unsqueeze(0)
             image_t = torch.as_tensor(images, device=self.device).float().unsqueeze(0) / 255
-            a, _, _ = self.model(state_t, (image_t - self.mean) / self.std, None)
+            features = None
+            if self.proximity_encoder is not None:
+                if proximity is None or np.shape(proximity)!=(40,32,8,8):
+                    raise ValueError("PC-ACT requires a (40,32,8,8) causal depth history in meters")
+                features = self.proximity_encoder(torch.as_tensor(proximity,device=self.device).float().unsqueeze(0))
+            a, _, _ = self.model(state_t, (image_t - self.mean) / self.std, None,proximity_positions=features)
             a = a[0].detach().cpu().numpy()
         if a.shape != (self.chunk_size, self.action_dim) or not np.isfinite(a).all():
             raise ValueError("ACT produced invalid action chunk")
@@ -205,9 +213,10 @@ class ChunkPlayer:
         return min(start+self.query_every, start+len(chunk)-ahead)
 
 
-def predict_timed(policy, q, rgb):
+def predict_timed(policy, q, rgb, proximity=None):
     since = time.monotonic()
-    return policy.predict(q, rgb), time.monotonic()-since
+    result = policy.predict(q,rgb) if proximity is None else policy.predict(q,rgb,proximity)
+    return result, time.monotonic()-since
 
 
 def checked_target(action, observed_q, lower, upper, max_delta):
@@ -241,7 +250,7 @@ class SmoothReference:
 
 
 class RobotServo(threading.Thread):
-    def __init__(self, robot, initial_q, args, bounds, control_cpus):
+    def __init__(self, robot, initial_q, args, bounds, control_cpus, control_guard=None):
         super().__init__(daemon=True)
         self.robot, self.args, self.bounds, self.control_cpus = robot, args, bounds, control_cpus
         self.filter = SmoothReference(initial_q, args.max_velocity, args.max_acceleration)
@@ -251,6 +260,7 @@ class RobotServo(threading.Thread):
         self.abort, self.ready, self.done = threading.Event(), threading.Event(), threading.Event()
         self.error, self.commands = None, []
         self.q_ref, self.dq_ref = self.target.copy(), np.zeros(7)
+        self.control_guard = control_guard
 
     def publish(self, action, observed_q, observation_time):
         target = checked_target(action, observed_q, *self.bounds, self.args.max_target_delta)
@@ -272,6 +282,7 @@ class RobotServo(threading.Thread):
                     if dt is None:
                         raise RuntimeError("robot left impedance control")
                     now = time.monotonic()
+                    if self.control_guard is not None:self.control_guard()
                     with self.lock:
                         target, updated = self.target.copy(), self.updated_at
                     if now - updated > self.args.watchdog:
@@ -365,7 +376,7 @@ def offline(args, policy, output):
     print(json.dumps({k:v for k,v in result.items() if k != "query_latency_s"}, indent=2))
 
 
-def live(args, policy, output, control_cpus):
+def live(args, policy, output, control_cpus, context=None):
     from franky import JointMotion, Robot
 
     camera_args = argparse.Namespace(**vars(args))
@@ -383,6 +394,7 @@ def live(args, policy, output, control_cpus):
                   success=False, monotonic_t0=time.monotonic())
     try:
         with ExitStack() as cleanup:
+            if context is not None:context.setup(cleanup)
             cameras = base.open_cameras(camera_args)
             for cam in cameras:
                 cleanup.callback(cam.close)
@@ -405,11 +417,14 @@ def live(args, policy, output, control_cpus):
                 if frame is None or time.monotonic()-frame[4]>args.camera_timeout:
                     raise RuntimeError(f"{name}: camera frame stale or unavailable")
                 bootstrap_images[name] = frame[0]
-            initial_chunk, initial_latency = predict_timed(policy, initial, policy.prepare_images(bootstrap_images))
+            initial_context = context.sample() if context is not None else None
+            initial_chunk, initial_latency = predict_timed(policy, initial, policy.prepare_images(bootstrap_images),
+                context.policy_input(initial_context) if context is not None else None)
             checked_target(initial_chunk[0], initial, *bounds, args.max_target_delta)
             executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="act-inference")
             cleanup.callback(executor.shutdown, wait=True, cancel_futures=True)
-            servo = RobotServo(robot, initial, args, bounds, control_cpus)
+            servo = RobotServo(robot, initial, args, bounds, control_cpus,
+                               context.control_guard if context is not None else None)
             cleanup.callback(servo.stop)
             servo.start()
             if not servo.ready.wait(3) or servo.error is not None:
@@ -424,6 +439,7 @@ def live(args, policy, output, control_cpus):
                 remaining=t0+tick/base.RATE_HZ-time.monotonic()
                 if remaining>0:time.sleep(remaining)
                 observed_at=time.monotonic()
+                sensor_context = context.sample() if context is not None else None
                 if observed_at-(t0+tick/base.RATE_HZ)>args.watchdog:
                     raise RuntimeError("policy loop fell behind its 15 Hz clock")
                 if servo.error is not None or servo.done.is_set():
@@ -431,6 +447,7 @@ def live(args, policy, output, control_cpus):
                 with servo.lock:
                     state=base.read_robot_state(robot)
                     qref,dqref=servo.q_ref.copy(),servo.dq_ref.copy()
+                    if context is not None:sensor_context['robot_fields']=context.robot_fields(robot)
                 images,ages,numbers={},[],[]
                 for name in policy.camera_names:
                     frame,_=cams[name].latest()
@@ -453,7 +470,8 @@ def live(args, policy, output, control_cpus):
                         raise RuntimeError("background inference stalled")
                 due = 1 if args.temporal_agg else player.next_query_tick(args.prefetch_steps)
                 if pending is None and tick >= due:
-                    pending = (tick, time.monotonic(), executor.submit(predict_timed,policy,state["q"].copy(),rgb.copy()))
+                    sensor_input = context.policy_input(sensor_context) if context is not None else None
+                    pending = (tick, time.monotonic(), executor.submit(predict_timed,policy,state["q"].copy(),rgb.copy(),sensor_input))
                 if time.monotonic()-observed_at>args.watchdog:
                     raise RuntimeError("observation/inference latency exceeded watchdog")
                 action=player.action(tick)
@@ -461,6 +479,7 @@ def live(args, policy, output, control_cpus):
                 records.append(dict(t=observed_at-t0,q=state["q"],dq=state["dq"],q_ref=qref,dq_ref=dqref,
                                     action=action[:7],inference_s=latency,rgb=rgb,camera_age_s=np.asarray(ages),
                                     camera_frame_number=np.asarray(numbers)))
+                if context is not None:records[-1].update(context.record_fields(sensor_context))
                 if tick%15==0:print(f"t={observed_at-t0:.1f}s goal error={np.max(abs(state['q']-args.goal)):.4f} rad")
             final=records[-1]
             # Result is computed while holding position, before controller shutdown.
@@ -479,12 +498,14 @@ def live(args, policy, output, control_cpus):
         result.update(error="" if failure is None else repr(failure),steps=len(records),
                       queries=len(queries),query_every=policy.query_every,temporal_agg=args.temporal_agg,
                       controller="100 Hz acceleration/velocity-limited joint impedance reference follower")
+        if context is not None:result.update(context.result_fields())
         save_results(output,records,queries,servo.commands if servo else [],result)
+        if context is not None:context.save_events(output,result["monotonic_t0"])
         print(f"saved {output}; success={result['success']}")
     if failure is not None:raise failure
 
 
-def parse_args(argv=None):
+def parse_args(argv=None,configure=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ckpt-dir",type=Path,default=DEFAULT_RUN)
     p.add_argument("--ckpt-name",default="policy_best.ckpt")
@@ -528,6 +549,7 @@ def parse_args(argv=None):
     p.add_argument("--cam-height",type=int,default=480)
     p.add_argument("--cam-fps",type=int,default=30)
     p.add_argument("--output",type=Path,help="new rollout output directory")
+    if configure is not None:configure(p)
     args=p.parse_args(argv)
     for key in ("duration","dynamics","max_velocity","max_acceleration","max_error","max_target_delta",
                 "task_margin","goal_tolerance","settle_velocity","success_hold","watchdog","camera_timeout"):
@@ -542,7 +564,7 @@ def parse_args(argv=None):
     for q in (args.start,args.goal):
         if not np.isfinite(q).all() or np.any(np.asarray(q)<np.asarray(Q_MIN)+.05) or np.any(np.asarray(q)>np.asarray(Q_MAX)-.05):
             p.error("start/goal must be finite and within FR3 joint limits with 0.05 rad margin")
-    if not args.offline_row and not args.check_model:
+    if not args.offline_row and not args.check_model and not getattr(args,'sensor_check',False) and not getattr(args,'reset_only',False):
         try:base.camera_specs(args)
         except ValueError as exc:p.error(str(exc))
     return args

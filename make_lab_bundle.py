@@ -14,7 +14,8 @@ def main():
     files=[root/name for name in [
         'record_act_waypoints.py','record_dataset.py','kinesthetic.py','cameras.py',
         'sensor_layout.py','eval_act_real.py','export_act_model.py','check_lab_setup.py',
-        'make_lab_bundle.py']]+list(root.glob('requirements-*.txt'))
+        'make_lab_bundle.py','train_pc_act.py','launch_pc_act.py','pc_act_wandb.py',
+        'eval_pc_act_real.py','export_pc_act_model.py']]+list(root.glob('requirements-*.txt'))
     files += [root/'README.md',root/'LAB_SETUP.txt']
     for directory in ['act_model','models','submodules/franky']:
         files += [path for path in (root/directory).rglob('*') if path.is_file()

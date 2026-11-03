@@ -276,6 +276,170 @@ Legacy normalization statistics pickled with NumPy 2 require a compatible NumPy 
 The bundled NPZ statistics avoid that restriction. `export_act_model.py` packages updated
 checkpoints, statistics and metadata into another self-contained model folder.
 
+### Real PC-ACT evaluation with an off-camera obstacle
+
+`eval_pc_act_real.py` loads the policy and paired surface encoder from
+`models/pc_act_test_20`. The bundled pair is the best scratch-trained checkpoint
+(epoch 1825). It verifies both weight checksums before connecting to the robot.
+It feeds the same canonical 40-sensor, eight-tick causal history as training; each
+15 Hz snapshot is repeated four times to form the 32-frame encoder input.
+
+**This model has shown very little proximity sensitivity. Do not rely on it to
+avoid an obstacle.** Use a soft, fixed test object and retain the operator's robot
+stop. The separate guard below is experimental and cannot guarantee collision
+prevention or sufficient stopping clearance.
+
+```bash
+# Check the paired model without hardware:
+python eval_pc_act_real.py --check-model --device cpu
+
+# Move to A with the obstacle removed and the reset path clear, then exit:
+python eval_pc_act_real.py --reset-only
+
+# After positioning the test object, verify live sensor readings without moving:
+python eval_pc_act_real.py --sensor-check --duration 20
+
+# Run one PC-ACT rollout; the arm must already be at A:
+python eval_pc_act_real.py \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --output eval_rollouts/pc_act_obstacle_live_01
+```
+
+The default does not reset automatically: it checks the arm is at A. Remove the
+obstacle before using `--reset-only` to prepare the next trial. `--reset-to-start`
+is available for unobstructed runs but should not be used to reset through an
+obstacle scene. There are no gripper commands. Confirm the object is absent from
+both saved camera views if the experiment is intended to test off-camera sensing.
+
+The main observation loop stays at 15 Hz, reference following and guard checks run
+at 100 Hz, and inference runs in a background worker. Default `--query-every 1`
+requests a fresh chunk whenever the worker becomes available. CPU queries took
+about 0.38 seconds here, so fresh policy responses are about 2–3 Hz on that CPU,
+not 15 Hz. GPU inference can be selected with `--device cuda` where available.
+Queries retain their original observation/tick origin; elapsed chunk elements are
+skipped. Sensor input age and background-inference delays are limited to 0.75 s
+by default; stale/missing sensors, cameras or commands abort the rollout.
+
+Persistent near returns exist even in the unobstructed recordings. The guard
+therefore compares each zone against `guard_baseline.npz`, the minimum valid depth
+at that zone across the 20 recorded nominal trajectories. A return is novel if
+it is at least `--guard-drop-m 0.01` closer than that background. The guard aborts
+if at least `--guard-min-zones 2` zones on one sensor have novel valid returns
+within `--stop-distance-m 0.08`. It always checks actual sensor input, including
+when the policy receives cleared input. It does not create an avoidance action.
+Its background subtraction can miss obstacles in already-near or occluded zones;
+these thresholds are sensor axial distances, not whole-arm clearance. Normal
+Franky controller shutdown may allow motion during torque release. Keep this
+abort mechanism separate from the robot's operator stop and from learned behavior.
+
+For a matched sensor-ablation trial, remove the object, reset to A, restore the same
+object location, then repeat with cleared policy proximity:
+
+```bash
+python eval_pc_act_real.py --proximity-mode clear \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --output eval_rollouts/pc_act_obstacle_clear_01
+```
+
+In `clear` mode, all policy depth histories are 4 m (no return); real sensor values
+are still recorded, and the independent guard remains active. Use equal motion
+limits, start/goal, object placement and camera views in both trials. The guard
+will often determine the stopping point in both modes; that is not evidence of
+learned avoidance. Compare policy proposals and pre-trigger path deviations too.
+
+`rollout.h5` adds raw sensor blocks, ages and packet counters, exact policy sensor
+histories, background/novel-zone masks, and any triggering sensor frame. It also
+records Franky's joint/Cartesian contact and collision signals and filtered
+external torques/wrench where available (NaN means unsupported). `result.json`
+reports goal success, guard trigger, sensor faults and robot contact/collision
+signals separately. `sensor_events.json` identifies the triggering sensor, depth,
+time and reason. `collision_free` and `learned_avoidance_demonstrated` remain unset:
+absence of a threshold signal is not proof of no contact or of learned avoidance.
+
+No-hardware replay and live-versus-clear policy comparison:
+
+```bash
+python eval_pc_act_real.py --offline-row recordings/act_test_20/episode_0000 \
+  --offline-steps 10 --compare-clear --device cpu --output eval_rollouts/pc_act_replay
+```
+
+To deploy another completed run, use `export_pc_act_model.py --source RUN_DIR
+--destination models/NEW_MODEL --background-data recordings/act_test_20`, then
+select that folder with `--ckpt-dir`. Copy the complete exported folder, including
+its encoder, pair manifest, NPZ statistics, image settings and guard background.
+
+### Standalone PC-ACT trajectory overfit training
+
+`train_pc_act.py` reads the 20 raw rows in `recordings/act_test_20` directly; no parent
+repository, converter or dataset registry is needed. It uses the local ACT architecture
+plus a shared surface encoder: eight causal 15 Hz snapshots are each repeated four times,
+mapped to 20 cm closeness, and encoded as 40 sensor tokens with 128 readout features each.
+Only past/current sensor samples enter an observation. Sensor names are reordered to the
+canonical order in `act_model/sensor_order.py`.
+
+```bash
+# Training dependencies include W&B:
+python -m pip install -r requirements-training.txt
+
+# Start the GPU job detached; paths and PID are printed and saved beside the run.
+python launch_pc_act.py --run-dir training_runs/my_pc_act_scratch \
+  --epochs 2000 --initialization scratch
+
+# Monitor without attaching to the training process:
+tail -f training_runs/my_pc_act_scratch.log
+cat training_runs/my_pc_act_scratch/progress.json
+```
+
+New runs log to W&B project `PC_ACT_experiments` by default; use `--wandb-entity`
+and `--wandb-project` to choose the account/project, or `--no-wandb` for local-only
+logging. The run URL is printed in the log and saved to `wandb_run.json`. The original
+`pc_act_test_20_scratch_20261103` job finished before W&B logging was added; its complete
+2,000-epoch history was subsequently uploaded as a labeled historical backfill at
+[this W&B run](https://wandb.ai/jayluvsgeography/PC_ACT_experiments/runs/qf7hhnb5).
+An older completed local run can be synced without retraining:
+
+```bash
+python pc_act_wandb.py --run-dir training_runs/my_completed_run \
+  --entity jayluvsgeography --project PC_ACT_experiments
+```
+
+This uploads the original recorded metrics and configuration, including sensor ablations;
+it does not upload the raw recordings or model weights. Repeating the completed backfill
+uses the saved W&B run binding and avoids creating another run.
+
+The default initializes the complete policy (including ResNet) and proximity encoder
+randomly. `--initialization act` is an explicit alternative that warm-starts shared policy
+weights from the successful ACT model. `--encoder-checkpoint PATH` optionally initializes
+the surface encoder from genuine pretrained weights. No smoke-test encoder is silently
+used as pretrained PC-ACT. The launcher prints both initialization choices.
+
+Defaults match the earlier model dimensions: chunk 50, hidden size 512, feedforward size
+3200, batch 8, KL weight 10 and policy/encoder learning rate 1e-5. Training uses 16 episodes
+and four descriptive validation episodes, with split seed 1. Every epoch samples one
+random start from each training episode, as the original ACT loader did; it is not a full
+pass through all 2,432 training frames. Validation uses four fixed starts per validation
+episode. The original one-sample real-action shift and zero gripper padding are preserved.
+The existing ACT normalization statistics are reused for compatibility; they were computed
+on all 20 episodes, so validation is not an unbiased generalization estimate.
+
+Each run saves data hashes, initialization and split provenance, image settings, NPZ
+statistics, metrics JSONL, progress JSON, and paired `policy_best.ckpt` /
+`prox_encoder_best.pt` (plus matching `last` files). Pair a policy with its same-epoch
+surface encoder. Every 100 epochs, descriptive sensor ablations compare live proximity,
+all-clear proximity, shuffled histories, and a synthetic near return on four sensors.
+Ablation effects measure dependence on proximity; they do not measure collision avoidance.
+`eval_act_real.py` is the vanilla ACT evaluator and deliberately rejects PC-ACT
+checkpoints; use `eval_pc_act_real.py` with the exported paired checkpoint for PC-ACT.
+
+The recorded paths contain no obstacle-avoidance demonstrations. Low imitation error or
+responses to synthetic sensor changes cannot establish collision avoidance. For an advisor
+comparison, report this as a proximity-conditioned overfit test, then compare ACT/PC-ACT
+with live and cleared proximity on matched obstacle trials using clearance, contacts,
+goal success, and path deviation. A completely random policy initialization also differs
+from an ACT baseline initialized with an ImageNet backbone, so it is not a controlled
+modality-only comparison. Add avoidance/correction demonstrations or another explicit
+avoidance training objective before claiming learned avoidance behavior.
+
 Cameras: on the robot PC a D435 gives no frames on a fresh start until it is USB power-cycled
 (2026-10-28: `cameras.py` and `record_dataset.py` both failed with "no frames" / "Frame didn't
 arrive" until `cameras.py --reset`). `record_dataset.py` and `kinesthetic.py replay` therefore

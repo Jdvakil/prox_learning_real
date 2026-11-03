@@ -1,0 +1,34 @@
+{
+  "dataset_stats.npz": {
+    "bytes": 1162,
+    "sha256": "6c88f2a215cf3754ce07e60acc5460fac87a03096839c62e2a1fb6a0f55c0183"
+  },
+  "guard_baseline.npz": {
+    "bytes": 13980,
+    "sha256": "fe66b345048865de54b2092057e8e172ba6b4c76a711c15066bdda130337a19d"
+  },
+  "image_metadata.json": {
+    "bytes": 103,
+    "sha256": "4de4674d48c93f4cfc76ba55880568bca69b8232e9850e326931765f97bee39d"
+  },
+  "policy_best.ckpt": {
+    "bytes": 336188107,
+    "sha256": "e726e12ecc6fe6919bf643ffe34768baa6b96016dbde448cd5eeccbf73dca76f"
+  },
+  "policy_pair.json": {
+    "bytes": 274,
+    "sha256": "9540ed76fcd9813cac56bd53fb1237c1a1b2ebbbf2a40650daad810d4565229a"
+  },
+  "prox_config.json": {
+    "bytes": 1316,
+    "sha256": "5deb75a0a5c281577f618f73d7930374853bd140cff17e73bdb4794d53d4a330"
+  },
+  "prox_encoder_best.pt": {
+    "bytes": 3396695,
+    "sha256": "0f6b94e7bac0d768652997a910bf4ce9a59414fb6d7ef532fd74019c70c3b5fc"
+  },
+  "training_config.json": {
+    "bytes": 8162,
+    "sha256": "9b0b24daa1349d40d014296eea8bbcd6a939ab82109558f6b8d73a356652bc04"
+  }
+}

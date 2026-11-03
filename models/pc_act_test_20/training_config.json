@@ -1,0 +1,186 @@
+{
+  "arguments": {
+    "data": "/home/jaydv/code/prox_learning/submodules/prox_learning_real/recordings/act_test_20",
+    "act_checkpoint": "/home/jaydv/code/prox_learning/submodules/prox_learning_real/models/act_test_20",
+    "encoder_checkpoint": null,
+    "initialization": "scratch",
+    "run_dir": "/home/jaydv/code/prox_learning/submodules/prox_learning_real/training_runs/pc_act_test_20_scratch_20261103",
+    "epochs": 2000,
+    "batch_size": 8,
+    "lr": 1e-05,
+    "encoder_lr": 1e-05,
+    "seed": 0,
+    "split_seed": 1,
+    "validate_every": 25,
+    "ablate_every": 100,
+    "device": "cuda"
+  },
+  "policy_config": {
+    "action_dim": 8,
+    "amp": "none",
+    "backbone": "resnet18",
+    "blur_curriculum_steps": null,
+    "blur_sigma0": 0,
+    "camera_names": [
+      "exo_camera_1",
+      "wrist_camera"
+    ],
+    "dec_layers": 7,
+    "dim_feedforward": 3200,
+    "enc_layers": 4,
+    "hidden_dim": 512,
+    "image_dropout_mode": "all",
+    "image_dropout_p": 0,
+    "kl_weight": 10,
+    "lr": "1e-05",
+    "lr_backbone": "1e-05",
+    "nheads": 8,
+    "num_epochs": 2000,
+    "num_queries": 50,
+    "policy_class": "ACT",
+    "prox_dropout_p": 0,
+    "prox_noise_rel": 0,
+    "prox_noise_std": 0,
+    "prox_pixel_dropout": 0,
+    "seed": 0,
+    "state_dim": 9,
+    "task_name": "act_test_20",
+    "zero_latent_on_drop": true,
+    "n_proximity_sensors": 40,
+    "prox_tokens_per_sensor": 1,
+    "prox_feat_dim": 128
+  },
+  "train_episode_ids": [
+    3,
+    16,
+    6,
+    10,
+    2,
+    14,
+    4,
+    17,
+    7,
+    1,
+    13,
+    0,
+    19,
+    18,
+    9,
+    15
+  ],
+  "validation_episode_ids": [
+    8,
+    12,
+    11,
+    5
+  ],
+  "policy_initialization": "scratch",
+  "warm_start_act_sha256": null,
+  "encoder_initialization": "random",
+  "encoder_initial_sha256": null,
+  "normalization_provenance": "Reused original ACT stats (all 20 original episodes); validation is descriptive, not an unbiased generalization estimate.",
+  "input_semantics": "causal 8x15Hz snapshots, each repeated four times; 20cm closeness cap; 40x128 readout tokens",
+  "data_hashes": {
+    "episode_0000": {
+      "trajectory": "d8809394607a8ce249d6a96f5dc467faae8191e0d50c36fc282b09f751130ee4",
+      "exo_camera_1": "d7b65a6bc381afeeca73251e4b83eb99e8c31db9a3704c601fbbd5bb12a2ee6a",
+      "wrist_camera": "3a7b762fa5633b412a834cd83a55b4491e9dbdd861f11abe57dabd00a99dfc02"
+    },
+    "episode_0001": {
+      "trajectory": "ba8ae097d6c67cff06920de1297ab03abfbce150a5899e9e0b7b58fba6f62719",
+      "exo_camera_1": "9d8b339d4b4c7201b538f3f3fecbde4844dd7c868f1237deda2668d47adab9f7",
+      "wrist_camera": "d2907a8a36e8154c18d9dc87d8eee44055bc60e65b685d3a1931b154a603c071"
+    },
+    "episode_0002": {
+      "trajectory": "5f6c9b8e9b84d0046cbeb874b41c602e6e4eb68d03ee481149a4302d80b98816",
+      "exo_camera_1": "f27270153fd07cb205da4bcab771aa2e1e4407f7ac1169800b4fcedb0ebfabee",
+      "wrist_camera": "0275bd3911e3aa55260be1dd75b45566596b1ffb2f5f16ae182c500f27912d2c"
+    },
+    "episode_0003": {
+      "trajectory": "58dcfc53250d90a7755eccc5f4ece9cf59078bd6714c6a7330d9635889352e14",
+      "exo_camera_1": "75d57032365bf9abc796e792f58b515dc6812aedac2372b976231c7275d74180",
+      "wrist_camera": "7c81df5fa2e737bc544548d169e05aa3f0e1101521bc3aaa4beb628dddd60059"
+    },
+    "episode_0004": {
+      "trajectory": "21e42dd946afb66173dd45d683ea467804b227744e60bf333ae426316ccdbb09",
+      "exo_camera_1": "ada0de94238e5d53151d5e5eaeef3406ace29f2f67948955c8f84d0e23bfc32d",
+      "wrist_camera": "1bba4a74414e787a791ff83d02833833c92e2d129529bd3f813f5beae41d3d41"
+    },
+    "episode_0005": {
+      "trajectory": "22893a1b2778e051186dfcafd7966846987e0a46a5737786f9f635a83330fc41",
+      "exo_camera_1": "7685d0346ad231d6cc2c1cec82f3ce3812280d11413d97268c294ab16111c63a",
+      "wrist_camera": "51b4c82f5159f358e9714a0bb67f98dbaebd81f57c7593d3bc6bf2731c172653"
+    },
+    "episode_0006": {
+      "trajectory": "412e327dc973eb051b296b6c6696a5acf48093a956f7702959853ecc6335652d",
+      "exo_camera_1": "48eed56c591c8abe41c6025f042e23233b0b0fa6cbcf9ea7af3a6da2ecb09c81",
+      "wrist_camera": "6df80256772d024d6aa1b804f1068e445379e1fd889aa3a47aeeb12992f45ee4"
+    },
+    "episode_0007": {
+      "trajectory": "2ede429c23e7f834595fb8b6f8c4ea9b1336a508b67a348c48577ed3cb6cec43",
+      "exo_camera_1": "dc4e272d1795a581912c86bc2994199de64392d9904023cffd564e1fae2a5f31",
+      "wrist_camera": "e4f6eabe4b9b2ddb9f45fd49cf3d69079d2fd3d31a9600d262958077ac2bed65"
+    },
+    "episode_0008": {
+      "trajectory": "ebcff040655e51fc28225b0d18ee496b4b7de1a37bfe47d8bcaa137394c805c6",
+      "exo_camera_1": "e86fe383dbdc86427572b8d67993072109cfa603c407d3ad3338ddd4fb60bcc2",
+      "wrist_camera": "72809f928b35c540ddf4e6b1fc935a18caabd95412a5e928472f1b10b838f2f0"
+    },
+    "episode_0009": {
+      "trajectory": "63ecfc1c4d63de675b6d888c0cb2ebc086474b1c79fd93a30a27d328e3d3a806",
+      "exo_camera_1": "d1682d3f44964042ad1e260e1d359efe99e031ac4ac540b75b9bafc6a92e9b31",
+      "wrist_camera": "805be1d496abc53a38f36c9713119838bebf407d26c639d7dcbae7421fbf3ef5"
+    },
+    "episode_0010": {
+      "trajectory": "676b4a7b03bcb76ecd03a496d7b2a099d3ec46ee15c5ff2d57add391f7780c4c",
+      "exo_camera_1": "8d711f4e16ee321ed6cb6808df7a933f649c1520111674189d4cb2b5f255c5b4",
+      "wrist_camera": "7a3fce9ca9c3da2f233666624c729cfbcb04f9eb60d3f3fc172ae1469bf209b3"
+    },
+    "episode_0011": {
+      "trajectory": "e2d7181e0084ed0a327a33aba7ff0ffe30cb3a1a6ac123a25e0937acffb817d4",
+      "exo_camera_1": "132c11ffa83332d9a8bfb41bc4ffadc2098e6878965d7ca2a2a07c545509e5fe",
+      "wrist_camera": "e5a3efba2b0053f413fb07ecbe1518a2aee06bd7e89e54fc6a4691c953ea5eb1"
+    },
+    "episode_0012": {
+      "trajectory": "58ac658205b4252e4f75f4e1dc164a6be5e1e6d16fa89ad9fcc2277eda3074ba",
+      "exo_camera_1": "116d1e1f16c7d263eb1745341f49c2e15fe262eecbaabe3a87d8748707f4686b",
+      "wrist_camera": "0ae4ee470fdf4ee01b7cffcb5e13fb5e1ea55a014feff770639804e548cb79c5"
+    },
+    "episode_0013": {
+      "trajectory": "8e11eae898e154219ec013dc807f9fc492163584563b91b694b988eb196b29af",
+      "exo_camera_1": "87936d3470c384006e1b4f5a12a7bfa2d96597ed9a455c6a1a1d7d4e49a45b15",
+      "wrist_camera": "8698f792772135785dbb859d37d460abb8226b43f9cf0fd7a65ee8258587162e"
+    },
+    "episode_0014": {
+      "trajectory": "f3603930354c45dd67de17abaa8345666f9143500e68a6ec02cfe201e556f0d7",
+      "exo_camera_1": "876017e4203969e47564dc675a5305b64f2b08536208a0da8c171d58470d409c",
+      "wrist_camera": "18788c99415e8f235ef2141c060f86dcd6b4df050bde56d84149dc8d31a2c20b"
+    },
+    "episode_0015": {
+      "trajectory": "55e8df7a055acdc779b47605bdec9a00a95d8f06597aad79051d107c498ede89",
+      "exo_camera_1": "5f1d5bee7bf0aba93ab9d2cd4737a43150e60975bb5792f53d417316cf33d0ed",
+      "wrist_camera": "0afd09e4084e77416a72ab1a7828a5fd79b03aae14a12ecc4fc12315b92021a3"
+    },
+    "episode_0016": {
+      "trajectory": "2f7e9234744a6adb520bd73b679601cfd6c6e29f8380ca75d8c12744773cf83e",
+      "exo_camera_1": "e3bff6b3302acefda4bce81255be280bbe811e0df2cebfd1d54f54bf10216651",
+      "wrist_camera": "04fe9304e7e5fdaad337f8f2cfc9aa91c1540a3d96143eae970f2ae1eeba80cf"
+    },
+    "episode_0017": {
+      "trajectory": "62c503a3df08604b414e3a3d87d80a78ec1af8c078dc969cb0efbd2e098f205e",
+      "exo_camera_1": "6d749df57cb7c01e69f441074230380a0bfc738af376a2dee4506f9a5f0a640a",
+      "wrist_camera": "84db32e9e62e388bebb49bf25bdce057f14abbfc67c1fc28651976227981c1e5"
+    },
+    "episode_0018": {
+      "trajectory": "b963b9bdbe507b719ce1b14d5f46651f9034cadaed16a251ca8c58a82da6e909",
+      "exo_camera_1": "bcce4e414b7c049d81715203f102e865922150bcfe977b31d62fc19c5f8906f7",
+      "wrist_camera": "cb24d53b41072dc62fb7bca9f79af40278ee3dd106c56eaaa962556ac579d083"
+    },
+    "episode_0019": {
+      "trajectory": "02a5f0fdf84ba349bc26e1afdfbe2f3961fd35ed7fa8ca4f6ba3718aea19a25c",
+      "exo_camera_1": "bd71a463ccfbb7a52d7b04163b5521c1efb8b1a069d6cd821335db48e9daa38d",
+      "wrist_camera": "f3e27ed163f964c70eb496618a54763d32869a8354b0074159b1b57f45c0bbba"
+    }
+  },
+  "scientific_limit": "Unobstructed trajectory imitation only. No collision avoidance demonstrated by low action loss or synthetic sensor sensitivity."
+}

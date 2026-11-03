@@ -7,3 +7,4 @@ MUJOCO_LOG.TXT
 viz/
 eval_rollouts/
 dist/
+training_runs/

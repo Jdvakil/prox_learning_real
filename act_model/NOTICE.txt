@@ -11,3 +11,8 @@ distributed utilities; omit optional IPython imports; build through a Namespace
 without training CLI arguments or optimizers; initialize ResNet with weights=None
 because all weights are supplied by the packaged checkpoint. The checkpoint
 parameter names and model computations are preserved.
+
+surface_geometry.py is the project's surface-geometry encoder copied into this
+standalone package from prox_learning/encoders/surface_geometry.py. sensor_order.py
+preserves the canonical ACT 40-sensor order. Their runtime imports are local;
+no parent checkout is required for the PC-ACT trainer.

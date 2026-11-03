@@ -1,0 +1,7 @@
+{
+  "policy_file": "policy_best.ckpt",
+  "encoder_file": "prox_encoder_best.pt",
+  "epoch": 1825,
+  "policy_sha256": "e726e12ecc6fe6919bf643ffe34768baa6b96016dbde448cd5eeccbf73dca76f",
+  "encoder_sha256": "0f6b94e7bac0d768652997a910bf4ce9a59414fb6d7ef532fd74019c70c3b5fc"
+}

@@ -1,0 +1,8 @@
+{
+  "camera_names": [
+    "exo_camera_1",
+    "wrist_camera"
+  ],
+  "image_h": 240,
+  "image_w": 320
+}

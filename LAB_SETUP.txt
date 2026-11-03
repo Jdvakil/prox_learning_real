@@ -13,6 +13,9 @@ Included layout
   models/act_test_20/          policy_best.ckpt, dataset_stats.npz,
                               training_config.json, image_metadata.json, manifest.json
   eval_act_real.py             offline inference and real-robot evaluation
+  eval_pc_act_real.py          paired PC-ACT evaluation with live proximity history
+  models/pc_act_test_20/        policy/encoder pair, statistics, image settings,
+                              checksum binding and background guard profile
   submodules/franky/           source for the local Franky tracker build
 
 Transfer
@@ -85,3 +88,22 @@ Exporting a newly trained model
   Copy the resulting model folder to the lab PC. All inference metadata is inside it.
   The exporter requires saved training_config.json or W&B training config.yaml.
   --image-height / --image-width can supply image dimensions instead of --data-dir.
+
+PC-ACT obstacle probe
+  The included PC-ACT pair is scratch-trained epoch 1825. Its sensitivity to sensor
+  changes is very small; do not rely on it to avoid the obstacle. See README.md's
+  real PC-ACT section for the experimental guard and limitations.
+    python eval_pc_act_real.py --check-model --device cpu
+  Remove the obstacle before resetting to A:
+    python eval_pc_act_real.py --reset-only
+  Place a soft, fixed test object with stopping clearance, out of both camera views.
+  First check the incoming sensors without moving the arm:
+    python eval_pc_act_real.py --sensor-check --duration 20
+  The real rollout requires the arm already at A and does not reset by default:
+    python eval_pc_act_real.py \
+      --wrist-serial 836612071883 --exo-serial 943222071556 \
+      --output eval_rollouts/pc_act_obstacle_live_01
+  --proximity-mode clear supplies all-clear policy inputs for a matched comparison;
+  actual sensors are still logged and still feed the independent guard. A guard
+  abort is logged separately and must not be described as learned avoidance.
+  Copy the entire models/pc_act_test_20 folder, not just policy_best.ckpt.
