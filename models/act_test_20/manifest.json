@@ -1,0 +1,18 @@
+{
+  "dataset_stats.npz": {
+    "bytes": 1162,
+    "sha256": "6c88f2a215cf3754ce07e60acc5460fac87a03096839c62e2a1fb6a0f55c0183"
+  },
+  "image_metadata.json": {
+    "bytes": 103,
+    "sha256": "4de4674d48c93f4cfc76ba55880568bca69b8232e9850e326931765f97bee39d"
+  },
+  "policy_best.ckpt": {
+    "bytes": 335862791,
+    "sha256": "dd4cbd53222ccc44bfc2c41f4aa641217ddd9f024b5feff0864dfb2d24431383"
+  },
+  "training_config.json": {
+    "bytes": 741,
+    "sha256": "2d4cc09c00807c5d8ec22fd7bab6eb4fb00e5a73e9a013b8e23c380d08b9dc63"
+  }
+}

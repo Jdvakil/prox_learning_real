@@ -2,6 +2,12 @@
 Proximity learning implementation on the real robot: Franka FR3 + Franka Hand with 41 8x8
 proximity sensors and two RealSense D435s (wrist, exocentric).
 
+**Standalone lab deployment:** collection, the ACT model architecture, the trained model,
+and evaluation are contained in this repository. No parent `prox_learning` installation
+or sibling ACT checkout is needed. See [LAB_SETUP.txt](LAB_SETUP.txt) for dependency setup,
+transfer, and hardware-free checks. `python make_lab_bundle.py` creates a transferable
+`dist/prox_learning_real_lab.tar.gz` with code, model weights and the local Franky source.
+
 ```bash
 git submodule update --init --recursive    # franky 2.0 (build it per submodules/franky)
 pip install pyrealsense2 "imageio[ffmpeg]" h5py numpy
@@ -135,6 +141,82 @@ HDF5 extras include `real/nominal_q`, `real/noise_q`, `real/dq_ref`, `real/clock
 coefficients, and `real/control/{t,q_ref,dq_ref}` for every reference actually sent at 100 Hz.
 `actions/joint_pos` and `real/target_q` contain the corresponding 15 Hz references. No action
 time shift is applied here; account for any shift performed by the training loader.
+
+### Evaluate the trained ACT policy on the real arm
+
+`eval_act_real.py` loads `models/act_test_20/policy_best.ckpt`, portable `dataset_stats.npz`,
+and saved training/image metadata. Its model architecture is bundled in `act_model/`.
+There is no runtime dependency on the parent repository, an ACT installation, or the
+converted training dataset. Legacy directories containing `dataset_stats.pkl` are also
+supported, but new deployments should use the portable exported model folder.
+It uses the training camera order (`exo_camera_1`, `wrist_camera`), 320x240 RGB input,
+ImageNet image normalization, and the saved joint/action statistics. Nine-dimensional
+state inputs receive two zero padding entries; only the first seven predicted arm positions
+are sent to the robot. It never connects to a gripper. This is vanilla RGB + joint-state ACT;
+depth and proximity are not model inputs, and PACT checkpoints are rejected.
+
+Install `requirements-eval.txt` in an environment with the local Franky build exposing
+`JointImpedanceTracker`. Use `python check_lab_setup.py` to check dependencies, then
+`python eval_act_real.py --check-model --device cpu` to load the model and run a dummy
+prediction without connecting to hardware. See `LAB_SETUP.txt` for the standalone setup.
+
+```bash
+# No hardware connection: checkpoint and image-pipeline check on a recorded episode.
+python eval_act_real.py --offline-row recordings/act_test_20/episode_0000 \
+  --device cpu --output eval_rollouts/offline_ep0
+
+# One real rollout: resets to training start A, runs the policy, and evaluates arrival at B.
+python eval_act_real.py \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --output eval_rollouts/real_trial_01
+```
+
+`--ckpt-dir` / `--ckpt-name` select another checkpoint. Camera serials must match the physical
+training views; `--camera NAME SERIAL` is also supported. `--no-reset` requires the arm
+already to be within the start tolerance. Default A/B match the collector; `--start` / `--goal`
+take seven joint angles. `--duration` defaults to 10.1 seconds, including the learned lead-in
+and goal hold. The return to A is a Franky `JointMotion` at `--dynamics 0.05`; it is outside
+the rollout. Check that this reset path and the trained motion have clear space.
+
+The main loop reads observations and selects absolute joint targets at 15 Hz. Inference
+runs in one background worker. The first chunk is prepared at A before torque control
+starts; subsequent queries begin up to `--prefetch-steps 8` ticks before the old chunk
+expires. A delayed prediction keeps its original observation/tick origin: already elapsed
+elements are skipped, so an old chunk is never restarted from its first action. A 50-step
+checkpoint therefore normally starts a new query 42 ticks after the previous query.
+`--query-every N` requests more frequent replanning; `--temporal-agg` queries whenever the
+worker is available and combines overlapping predictions, favoring recent ones with
+`--aggregation-decay`. Actual query ticks are logged; compute throughput can limit them.
+The simpler offline mode executes fixed chunks without real-time prefetch scheduling;
+its teacher-forced prediction error is not a real-robot success rate.
+
+A separate 100 Hz Franky joint impedance tracker follows a critically damped reference
+with bounded velocity (0.15 rad/s) and acceleration (0.5 rad/s²). This smooths the policy's
+15 Hz position commands. The dynamics factor applies to the reset, while these explicit
+limits apply to streamed references. Commands outside the FR3/task joint envelope or more
+than 0.12 rad from measured joints are rejected. The default task envelope is the A/B joint
+range plus 0.08 rad, intersected with joint limits. Camera age over 0.25 seconds, missing
+policy updates, inference delays over 0.5 seconds, excessive tracking error (0.15 rad),
+invalid outputs, or exhausted chunks abort and save a failed rollout. The controller stops
+on exceptions or Ctrl-C. These checks do not provide collision avoidance.
+
+Success requires measured goal error at most 0.02 rad and maximum measured joint velocity
+at most 0.01 rad/s throughout the last 0.5 seconds. This is measured while the tracker still
+holds position; shutdown motion is excluded. Every run creates a new output directory:
+
+- `config.json`: checkpoint, training configuration and resolved image/camera settings.
+- `rollout.h5`: observation times, measured joints/velocities, actual smoothed references,
+  selected policy actions, RGB inputs, camera frame numbers/ages, query ticks and complete
+  predicted chunks, and the actual 100 Hz reference trace.
+- `result.json`: success/error, goal error, query latency and execution settings. In offline
+  mode it reports action prediction errors and explicitly leaves rollout success unset.
+
+The original ACT loader shifts real-robot labels by one observation. Offline output reports
+errors against both the active recorded reference and this previous-action target. Live
+execution sends absolute predicted positions directly; it does not apply an extra shift.
+Legacy normalization statistics pickled with NumPy 2 require a compatible NumPy runtime.
+The bundled NPZ statistics avoid that restriction. `export_act_model.py` packages updated
+checkpoints, statistics and metadata into another self-contained model folder.
 
 Cameras: on the robot PC a D435 gives no frames on a fresh start until it is USB power-cycled
 (2026-10-28: `cameras.py` and `record_dataset.py` both failed with "no frames" / "Frame didn't

@@ -1,0 +1,4 @@
+-r requirements-collection.txt
+torch==2.7.1
+torchvision==0.22.1
+PyYAML>=6
