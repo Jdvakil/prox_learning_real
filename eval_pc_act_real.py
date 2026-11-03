@@ -334,6 +334,31 @@ def sensor_check(args):
         print(f'Saved all 40 sensor summaries to {output}',flush=True)
 
 
+def guarded_rollout(args,policy,output,cpus,context):
+    """Report expected guard stops cleanly; preserve tracebacks for unrelated bugs."""
+    try:
+        act.live(args,policy,output,cpus,context=context)
+    except (ProximityAbort,RuntimeError) as exc:
+        if context.trigger is None:raise
+        if not isinstance(exc,ProximityAbort) and json.dumps(context.trigger) not in str(exc):raise
+        result_path=output/'result.json'
+        result=json.loads(result_path.read_text())
+        preflight=result.get('termination_phase')=='sensor_preflight'
+        reason=context.trigger['reason']
+        result['outcome']=('blocked_at_sensor_preflight' if preflight else 'proximity_guard_stop') if reason=='novel_proximity' else 'sensor_fault'
+        result['exit_code']=2
+        result_path.write_text(json.dumps(result,indent=2)+'\n')
+        print(f'PC-ACT {result["outcome"]}: {reason}; sensor={context.trigger.get("sensor","unknown")}.',flush=True)
+        if reason=='novel_proximity':
+            print(f'Measured {context.trigger["distance_m"]*1000:.1f} mm in {context.trigger["zones"]} novel close zones; '
+                  f'guard threshold {context.trigger["threshold_m"]*1000:.1f} mm.',flush=True)
+        if preflight:print('The check stopped before connecting to the robot or starting motion.',flush=True)
+        print(f'Details saved in {result_path} and {output/"sensor_events.json"}. '
+              'Use --sensor-check to inspect all sensor readings.',flush=True)
+        return 2
+    return 0
+
+
 def main(argv=None):
     args=act.parse_args(argv,configure)
     for key in ['sensor_timeout','sensor_warmup','stop_distance_m','guard_drop_m','sensor_check_interval']:
@@ -366,8 +391,8 @@ def main(argv=None):
         (output/'config.json').write_text(json.dumps(dict(vars(args),policy_pair=policy.pair,
             sensor_names=NAMES,resolved_camera_names=policy.camera_names,resolved_device=policy.device),default=str,indent=2)+'\n')
         if args.offline_row:offline(args,policy,output)
-        else:act.live(args,policy,output,cpus,context=LiveSkinContext(args))
+        else:return guarded_rollout(args,policy,output,cpus,LiveSkinContext(args))
     finally:os.sched_setaffinity(0,affinity)
 
 
-if __name__=='__main__':main()
+if __name__=='__main__':raise SystemExit(main())

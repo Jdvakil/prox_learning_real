@@ -391,27 +391,34 @@ def live(args, policy, output, control_cpus, context=None):
     failure = None
     result = dict(mode="real_robot", checkpoint=str(args.ckpt_dir/args.ckpt_name),
                   camera_names=policy.camera_names, start_q=args.start, goal_q=args.goal,
-                  success=False, monotonic_t0=time.monotonic())
+                  success=False, robot_connected=False, termination_phase='sensor_preflight' if context is not None else 'camera_setup',
+                  monotonic_t0=time.monotonic())
     try:
         with ExitStack() as cleanup:
             if context is not None:context.setup(cleanup)
+            result['termination_phase']='camera_setup'
             cameras = base.open_cameras(camera_args)
             for cam in cameras:
                 cleanup.callback(cam.close)
             cams = {cam.name:cam for cam in cameras}
+            result['termination_phase']='robot_connection'
             robot = Robot(args.host)
+            result['robot_connected']=True
             robot.recover_from_errors()
             robot.relative_dynamics_factor = args.dynamics
             if not args.no_reset:
+                result['termination_phase']='reset_to_start'
                 print("Moving to training start A, outside rollout.")
                 robot.move(JointMotion(args.start))
                 time.sleep(.5)
+            result['termination_phase']='start_pose_check'
             initial = base.read_robot_state(robot)["q"]
             if np.max(abs(initial-np.asarray(args.start))) > args.goal_tolerance:
                 raise RuntimeError("arm is not at training start A")
             # Prepare the first chunk at A before starting torque control. All
             # subsequent inference runs in one worker, off the sampling thread.
             bootstrap_images = {}
+            result['termination_phase']='model_bootstrap'
             for name in policy.camera_names:
                 frame, _ = cams[name].latest()
                 if frame is None or time.monotonic()-frame[4]>args.camera_timeout:
@@ -426,6 +433,7 @@ def live(args, policy, output, control_cpus, context=None):
             servo = RobotServo(robot, initial, args, bounds, control_cpus,
                                context.control_guard if context is not None else None)
             cleanup.callback(servo.stop)
+            result['termination_phase']='control_startup'
             servo.start()
             if not servo.ready.wait(3) or servo.error is not None:
                 raise RuntimeError(f"could not start impedance control: {servo.error}")
@@ -435,6 +443,7 @@ def live(args, policy, output, control_cpus, context=None):
             result["query_latency_s"] = [initial_latency]
             pending = None
             t0 = time.monotonic();result["monotonic_t0"] = t0
+            result['termination_phase']='rollout'
             for tick in range(int(np.ceil(args.duration*base.RATE_HZ))):
                 remaining=t0+tick/base.RATE_HZ-time.monotonic()
                 if remaining>0:time.sleep(remaining)
@@ -488,6 +497,7 @@ def live(args, policy, output, control_cpus, context=None):
             tail=[r for r in records if r["t"]>=final["t"]-args.success_hold]
             result["success"]=bool(len(tail)>=max(2,int(args.success_hold*base.RATE_HZ)) and
                 all(np.max(abs(r["q"]-args.goal))<=args.goal_tolerance and np.max(abs(r["dq"]))<=args.settle_velocity for r in tail))
+            result['termination_phase']='completed'
     except BaseException as exc:
         failure=exc
         result["success"]=False

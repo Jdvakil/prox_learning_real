@@ -410,6 +410,16 @@ signals separately. `sensor_events.json` identifies the triggering sensor, depth
 time and reason. `collision_free` and `learned_avoidance_demonstrated` remain unset:
 absence of a threshold signal is not proof of no contact or of learned avoidance.
 
+An expected sensor guard stop exits with code 2 and a concise explanation instead
+of a Python traceback. `outcome: blocked_at_sensor_preflight` means the check
+stopped before connecting to the robot or starting motion. For example, four novel
+zones at 32 mm on `link2_sensor_4` are inside the default 80 mm guard threshold and
+will block startup in both `live` and `clear` policy modes. The saved result records
+`termination_phase`, `robot_connected`, and the original stop event. Inspect all
+readings with `--sensor-check` and verify the scene/background before repeating
+with a new output directory. Unexpected model/runtime errors still retain their
+tracebacks; guard stops are not silently bypassed.
+
 No-hardware replay and live-versus-clear policy comparison:
 
 ```bash

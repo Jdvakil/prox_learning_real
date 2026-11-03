@@ -148,6 +148,53 @@ class GuardTests(unittest.TestCase):
             self.assertIn(pc.NAMES[-1],output.getvalue())
             self.assertEqual(len((c.args.output/'snapshots.jsonl').read_text().splitlines()),3)
 
+    def test_preflight_guard_is_reported_cleanly_before_robot_connection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,depth=self.context(temp,mode='clear')
+            depth[pc.NAMES.index('link2_sensor_4'),:4]=32
+            args=pc.act.parse_args(['--wrist-serial','w','--exo-serial','e','--proximity-mode','clear'],pc.configure)
+            args.guard_baseline=c.args.guard_baseline;c.args=args
+            policy=SimpleNamespace(camera_names=['exo_camera_1','wrist_camera'],query_every=1)
+            out=Path(temp)/'rollout';out.mkdir()
+            with patch.dict(sys.modules,{'franky':SimpleNamespace(Robot=unittest.mock.Mock(),JointMotion=lambda q:q)}),\
+                 patch.object(pc.base,'open_cameras') as cameras,redirect_stdout(io.StringIO()) as captured:
+                robot=sys.modules['franky'].Robot
+                code=pc.guarded_rollout(args,policy,out,None,c)
+                robot.assert_not_called();cameras.assert_not_called()
+            self.assertEqual(code,2)
+            result=json.loads((out/'result.json').read_text())
+            self.assertEqual(result['outcome'],'blocked_at_sensor_preflight')
+            self.assertFalse(result['robot_connected'])
+            self.assertEqual(result['termination_phase'],'sensor_preflight')
+            self.assertEqual(result['steps'],0)
+            self.assertTrue(result['guard_triggered'])
+            self.assertFalse(result['success'])
+            self.assertEqual(result['stop_event']['zones'],4)
+            self.assertAlmostEqual(result['stop_event']['distance_m'],.032)
+            self.assertIn('32.0 mm',captured.getvalue())
+            self.assertNotIn('Traceback',captured.getvalue())
+            self.assertTrue((out/'sensor_events.json').exists())
+
+    def test_unrelated_runtime_bug_is_not_misreported_as_guard_stop(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,_=self.context(temp)
+            c.trigger=dict(reason='novel_proximity',sensor=pc.NAMES[0])
+            with patch.object(pc.act,'live',side_effect=RuntimeError('unrelated model failure')):
+                with self.assertRaisesRegex(RuntimeError,'unrelated model failure'):
+                    pc.guarded_rollout(None,None,Path(temp),None,c)
+
+    def test_wrapped_controller_guard_stop_keeps_the_failure_result(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,_=self.context(temp)
+            c.trigger=dict(reason='novel_proximity',sensor=pc.NAMES[0],distance_m=.032,zones=4,threshold_m=.08)
+            out=Path(temp)
+            (out/'result.json').write_text(json.dumps(dict(success=False,robot_connected=True,termination_phase='rollout')))
+            error=RuntimeError('robot control stopped: '+json.dumps(c.trigger))
+            with patch.object(pc.act,'live',side_effect=error),redirect_stdout(io.StringIO()):
+                code=pc.guarded_rollout(None,None,out,None,c)
+            self.assertEqual(code,2)
+            self.assertEqual(json.loads((out/'result.json').read_text())['outcome'],'proximity_guard_stop')
+
 
 class RealLoopTests(unittest.TestCase):
     def run_fake(self,temp,trigger=False):
