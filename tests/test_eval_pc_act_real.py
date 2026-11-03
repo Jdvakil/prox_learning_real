@@ -33,11 +33,11 @@ class HistoryTests(unittest.TestCase):
 
 
 class GuardTests(unittest.TestCase):
-    def context(self,temp,background=4.,mode='live',stale=False):
+    def context(self,temp,background=4.,mode='live',stale=False,disable_guard=False):
         path=Path(temp)/'baseline.npz'
         np.savez(path,minimum_depth_m=np.full((40,8,8),background,np.float32),sensor_names=np.asarray(pc.NAMES))
         args=SimpleNamespace(guard_baseline=path,guard_drop_m=.01,guard_min_zones=2,stop_distance_m=.08,
-            sensor_timeout=.75,sensor_warmup=.1,proximity_mode=mode)
+            sensor_timeout=.75,sensor_warmup=.1,proximity_mode=mode,no_proximity_guard=disable_guard)
         depth=np.full((40,128),4000,np.uint16)
         lookup={pc.sim_name(link,ident):(link,ident) for link,ident in pc.base.SENSORS}
         def snapshot():return {lookup[name]:(depth[i].copy(),time.monotonic()-(1 if stale else 0),2) for i,name in enumerate(pc.NAMES)}
@@ -70,6 +70,22 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(c.trigger['reason'],'stale_sensor')
             self.assertTrue(c.result_fields()['sensor_fault'])
             self.assertFalse(c.result_fields()['guard_triggered'])
+
+    def test_disabled_distance_guard_preserves_live_model_inputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,depth=self.context(temp,disable_guard=True)
+            depth[0,:4]=32
+            x=c.sample();c.control_guard()
+            self.assertEqual(x['guard_sensors'],[pc.NAMES[0]])
+            self.assertFalse(c.result_fields()['proximity_guard_enabled'])
+            self.assertIsNone(c.trigger)
+            self.assertAlmostEqual(float(c.policy_input(x)[0,-1,0,0]),.032)
+
+    def test_disabling_distance_guard_does_not_disable_stale_sensor_abort(self):
+        with tempfile.TemporaryDirectory() as temp:
+            c,_=self.context(temp,stale=True,disable_guard=True)
+            with self.assertRaises(pc.ProximityAbort):c.control_guard()
+            self.assertEqual(c.trigger['reason'],'stale_sensor')
 
     def test_individual_close_pixel_is_logged_but_requires_two_zones_to_abort(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -78,6 +78,7 @@ class ProximityAbort(RuntimeError):pass
 class LiveSkinContext:
     def __init__(self,args,listener=None):
         self.args,self.listener=args,listener
+        self.guard_enabled=not getattr(args,'no_proximity_guard',False)
         self.history=CausalSkinHistory()
         self.lock=threading.RLock()
         self.events=[];self.trigger=None;self.last_snapshot=None
@@ -143,7 +144,7 @@ class LiveSkinContext:
         sensor_counts=close.sum(axis=(1,2))
         triggered=np.flatnonzero(sensor_counts>=self.args.guard_min_zones)
         snapshot['guard_sensors']=[NAMES[i] for i in triggered]
-        if len(triggered) and not diagnostic:
+        if len(triggered) and not diagnostic and self.guard_enabled:
             i=int(triggered[np.argmax(sensor_counts[triggered])])
             self._abort('novel_proximity',snapshot,sensor=NAMES[i],zones=int(sensor_counts[i]),
                         distance_m=float(meters[i][close[i]].min()),
@@ -185,7 +186,7 @@ class LiveSkinContext:
 
     def result_fields(self):
         return dict(policy_type='PC-ACT',proximity_mode=self.args.proximity_mode,
-                    sensor_names=NAMES,proximity_guard_enabled=True,
+                    sensor_names=NAMES,proximity_guard_enabled=self.guard_enabled,
                     guard_triggered=bool(self.trigger and self.trigger['reason']=='novel_proximity'),
                     sensor_fault=bool(self.trigger and self.trigger['reason']!='novel_proximity'),
                     stop_event=self.trigger,minimum_valid_sensor_depth_m=self.min_raw if np.isfinite(self.min_raw) else None,
@@ -201,6 +202,7 @@ class LiveSkinContext:
         with h5py.File(output/'rollout.h5','a') as f:
             f.attrs['sensor_names_json']=json.dumps(NAMES)
             f.attrs['proximity_mode']=self.args.proximity_mode
+            f.attrs['proximity_guard_enabled']=self.guard_enabled
             if 'proximity_t' in f:
                 f['proximity_t'][:]=f['proximity_t'][:]-t0
                 f['proximity_t'].attrs['unit']='seconds since rollout start, host monotonic arrival snapshot'
@@ -260,6 +262,7 @@ def configure(parser):
     parser.add_argument('--stop-distance-m',type=float,default=.08,help='heuristic guard threshold for novel returns, not whole-robot clearance')
     parser.add_argument('--guard-drop-m',type=float,default=.01,help='minimum decrease relative to the recorded background for a novel return')
     parser.add_argument('--guard-min-zones',type=int,default=2)
+    parser.add_argument('--no-proximity-guard',action='store_true',help='disable distance-based intrusion aborts; keep live proximity inputs, sensor freshness checks and robot limits')
     parser.add_argument('--guard-baseline',type=Path,help='defaults to guard_baseline.npz inside checkpoint directory')
     parser.add_argument('--compare-clear',action='store_true',help='offline only: compare policy chunks with all-clear proximity')
     parser.add_argument('--sensor-check',action='store_true',help='read live UDP sensors and guard status; no robot, cameras or model')
@@ -381,6 +384,8 @@ def main(argv=None):
     try:
         cpus=None if args.offline_row or args.check_model else base.reserve_control_cpus(args.control_cpu)
         policy=PCInference(args)
+        if args.no_proximity_guard:
+            print('Distance-based proximity guard disabled. Sensor freshness, command watchdog and robot limits remain active.',flush=True)
         dummy=np.zeros((len(policy.camera_names),policy.height,policy.width,3),np.uint8)
         started=time.monotonic();chunk=policy.predict(np.asarray(args.start),dummy,np.full((40,32,8,8),4.,np.float32))
         elapsed=time.monotonic()-started

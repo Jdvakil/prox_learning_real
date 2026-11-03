@@ -124,6 +124,24 @@ checkpoint's proximity sensitivity is small, so do not rely on it to avoid the
 object. See [the detailed PC-ACT evaluation notes](#real-pc-act-evaluation-with-an-off-camera-obstacle)
 for thresholds, timing and log fields. No gripper is connected or commanded.
 
+To evaluate policy behavior without the distance-based guard aborting the trial,
+add `--no-proximity-guard`:
+
+```bash
+python eval_pc_act_real.py \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --proximity-mode live --no-proximity-guard \
+  --output eval_rollouts/pc_act_obstacle_live_unguarded_01
+```
+
+This keeps all 40 live sensor inputs, raw readings and novel-zone logs. It disables
+only the background-relative distance abort; stale/missing sensor checks, command
+watchdogs, joint bounds and tracking-error checks remain active. The setting is
+recorded as `proximity_guard_enabled: false` in the result and HDF5 metadata.
+The policy's weak proximity response remains a limitation; use a soft test object
+and keep the operator stop ready. For a matched cleared-input trial, use the same
+flag with `--proximity-mode clear` and a new output directory.
+
 ## Demonstrations: kinesthetic teach, then replay
 
 ```bash
