@@ -1,0 +1,25 @@
+robot control on CPU [7, 15], recording on the other 14
+number of parameters: 83.97M
+ACT: state=9, action=8, chunk=50, query_every=1, cameras=['exo_camera_1', 'wrist_camera'], RGB=320x240, device=cpu
+PC-ACT: paired epoch 1825; causal 8-tick history; policy sensor mode=clear
+saved eval_rollouts/pc_act_obstacle_clear_01; success=False
+emoved directory 'eval_rollouts/pc_act_obstacle_clear_01/'
+(franky) jaydv@verstappen:~/prox_learning_real$ python eval_pc_act_real.py   --wrist-serial 836612071883 --exo-serial 943222071556   --proximity-mode clear --output eval_rollouts/pc_act_obstacle_clear_01 > eval_pcact.txt
+Traceback (most recent call last):
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 373, in <module>
+    if __name__=='__main__':main()
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 369, in main
+    else:act.live(args,policy,output,cpus,context=LiveSkinContext(args))
+  File "/home/jaydv/prox_learning_real/eval_act_real.py", line 397, in live
+    if context is not None:context.setup(cleanup)
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 103, in setup
+    if not diagnostic:self.control_guard()
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 153, in control_guard
+    def control_guard(self):self.read()
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 112, in read
+    with self.lock:return self._read(diagnostic)
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 148, in _read
+    self._abort('novel_proximity',snapshot,sensor=NAMES[i],zones=int(sensor_counts[i]),
+  File "/home/jaydv/prox_learning_real/eval_pc_act_real.py", line 109, in _abort
+    raise ProximityAbort(json.dumps(self.trigger))
+__main__.ProximityAbort: {"reason": "novel_proximity", "monotonic_time": 356758.471747496, "sensor": "link2_sensor_4", "zones": 4, "distance_m": 0.03200000151991844, "threshold_m": 0.08, "background_drop_m": 0.01}
