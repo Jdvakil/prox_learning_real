@@ -142,6 +142,27 @@ The policy's weak proximity response remains a limitation; use a soft test objec
 and keep the operator stop ready. For a matched cleared-input trial, use the same
 flag with `--proximity-mode clear` and a new output directory.
 
+The policy normally ends at B. If the next trial reports `arm is not at training
+start A`, remove the obstacle and run `python eval_pc_act_real.py --reset-only`
+before starting that trial. To return to A at the end of each normally completed
+run, add `--reset-after-run`:
+
+```bash
+python eval_pc_act_real.py \
+  --wrist-serial 836612071883 --exo-serial 943222071556 \
+  --proximity-mode live --no-proximity-guard --reset-after-run \
+  --output eval_rollouts/pc_act_live_return_01
+```
+
+After saving the rollout, the script waits for you to remove the obstacle and
+clear the return path. Press Enter to return to A, or type `skip` to stay put.
+The return uses the configured slow reset dynamics, happens outside the evaluation
+recording, and is logged separately in `reset.json` and `result.json`'s
+`post_run_reset` field. A guard/fault abort does not trigger a return. A redirected
+or noninteractive stdin or stderr also skips the return. The prompt goes to stderr,
+so stdout can still be redirected to your evaluation log. To reset before evaluation instead,
+`--reset-to-start` is available when the reset path is already clear.
+
 ## Demonstrations: kinesthetic teach, then replay
 
 ```bash

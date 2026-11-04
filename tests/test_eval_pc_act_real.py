@@ -212,6 +212,58 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(json.loads((out/'result.json').read_text())['outcome'],'proximity_guard_stop')
 
 
+class ReturnToStartTests(unittest.TestCase):
+    def fixture(self,temp,completed=True):
+        out=Path(temp)
+        result=dict(success=True,error='',termination_phase='completed' if completed else 'sensor_preflight')
+        (out/'result.json').write_text(json.dumps(result))
+        return SimpleNamespace(start=list(pc.act.START)),out
+
+    def test_completed_run_returns_to_a_after_path_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args,out=self.fixture(temp)
+            with patch.object(pc.os,'isatty',return_value=True),patch('builtins.input',return_value=''),\
+                 patch.object(pc,'reset_to_start',return_value=.001) as reset,redirect_stdout(io.StringIO()):
+                self.assertEqual(pc.reset_after_run(args,out,0),0)
+                reset.assert_called_once_with(args)
+            record=json.loads((out/'reset.json').read_text())
+            self.assertEqual(record['status'],'complete')
+            self.assertTrue(json.loads((out/'result.json').read_text())['success'])
+
+    def test_guard_abort_never_automatically_resets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args,out=self.fixture(temp,completed=False)
+            with patch.object(pc,'reset_to_start') as reset,patch('builtins.input') as prompt,redirect_stdout(io.StringIO()):
+                self.assertEqual(pc.reset_after_run(args,out,2),2)
+                reset.assert_not_called();prompt.assert_not_called()
+            self.assertEqual(json.loads((out/'reset.json').read_text())['status'],'skipped')
+
+    def test_redirected_stdin_never_implies_clear_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args,out=self.fixture(temp)
+            with patch.object(pc.os,'isatty',return_value=False),patch.object(pc,'reset_to_start') as reset,\
+                 patch('builtins.input') as prompt,redirect_stdout(io.StringIO()):
+                pc.reset_after_run(args,out,0)
+                reset.assert_not_called();prompt.assert_not_called()
+
+    def test_operator_can_skip_return_to_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args,out=self.fixture(temp)
+            with patch.object(pc.os,'isatty',return_value=True),patch('builtins.input',return_value='skip'),\
+                 patch.object(pc,'reset_to_start') as reset,redirect_stdout(io.StringIO()):
+                pc.reset_after_run(args,out,0)
+                reset.assert_not_called()
+            self.assertEqual(json.loads((out/'reset.json').read_text())['status'],'skipped')
+
+    def test_interrupted_return_is_not_reported_complete(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args,out=self.fixture(temp)
+            with patch.object(pc.os,'isatty',return_value=True),patch('builtins.input',return_value=''),\
+                 patch.object(pc,'reset_to_start',side_effect=KeyboardInterrupt),redirect_stdout(io.StringIO()):
+                self.assertEqual(pc.reset_after_run(args,out,0),130)
+            self.assertEqual(json.loads((out/'reset.json').read_text())['status'],'interrupted')
+
+
 class RealLoopTests(unittest.TestCase):
     def run_fake(self,temp,trigger=False):
         args=pc.act.parse_args(['--wrist-serial','w','--exo-serial','e','--duration','.22',

@@ -414,7 +414,10 @@ def live(args, policy, output, control_cpus, context=None):
             result['termination_phase']='start_pose_check'
             initial = base.read_robot_state(robot)["q"]
             if np.max(abs(initial-np.asarray(args.start))) > args.goal_tolerance:
-                raise RuntimeError("arm is not at training start A")
+                advice=("remove the obstacle, run 'python eval_pc_act_real.py --reset-only', then start the next trial. "
+                        "For a clear reset path, --reset-to-start can reset before a PC-ACT run.") if context is not None else (
+                        "check the reset motion and start pose; omit --no-reset to reset before evaluation.")
+                raise RuntimeError("arm is not at training start A; "+advice)
             # Prepare the first chunk at A before starting torque control. All
             # subsequent inference runs in one worker, off the sampling thread.
             bootstrap_images = {}

@@ -9,6 +9,7 @@ import hashlib
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 import time
 import threading
@@ -256,6 +257,7 @@ def configure(parser):
     parser.set_defaults(ckpt_dir=DEFAULT_MODEL,no_reset=True,query_every=1,watchdog=.75)
     parser.add_argument('--reset-to-start',dest='no_reset',action='store_false',help='reset to A only with the obstacle removed and a clear path')
     parser.add_argument('--reset-only',action='store_true',help='move to A and exit, before placing the obstacle; no policy execution')
+    parser.add_argument('--reset-after-run',action='store_true',help='after a completed live rollout, wait for the operator to clear the path, then return to A outside the recording')
     parser.add_argument('--proximity-mode',choices=['live','clear'],default='live')
     parser.add_argument('--sensor-timeout',type=float,default=.75,help='abort if any trained sensor is older than this many seconds')
     parser.add_argument('--sensor-warmup',type=float,default=5.)
@@ -362,20 +364,74 @@ def guarded_rollout(args,policy,output,cpus,context):
     return 0
 
 
+def reset_to_start(args):
+    from franky import Robot,JointMotion
+    robot=Robot(args.host);robot.recover_from_errors();robot.relative_dynamics_factor=args.dynamics
+    try:
+        robot.move(JointMotion(args.start))
+    except BaseException:
+        try:robot.stop()
+        except Exception as exc:print(f'Could not stop interrupted reset: {exc}',file=sys.stderr,flush=True)
+        raise
+    error=float(abs(base.read_robot_state(robot)['q']-args.start).max())
+    if error>args.goal_tolerance:raise RuntimeError(f'reset error {error:.4f} rad exceeds start tolerance')
+    print(f'Arm at A; maximum joint error {error:.4f} rad.',flush=True)
+    return error
+
+
+def reset_after_run(args,output,exit_code):
+    """Reset only after normal completion, with a separate obstacle-clearance step."""
+    result_path=output/'result.json'
+    result=json.loads(result_path.read_text())
+    reset=dict(requested=True,status='pending',target_q=args.start)
+    try:
+        if exit_code or result.get('error') or result.get('termination_phase')!='completed':
+            reset.update(status='skipped',reason='rollout aborted or did not complete normally')
+            print('Return to A skipped after an aborted rollout. Remove the obstacle and use --reset-only when ready.',flush=True)
+            return exit_code
+        if not os.isatty(0) or not os.isatty(2):
+            reset.update(status='skipped',reason='interactive terminal required to confirm the return path is clear')
+            print('Return to A requires an interactive terminal. Remove the obstacle and use --reset-only.',flush=True)
+            return exit_code
+        print('Rollout saved. Remove the obstacle and clear the return path. '
+              'Press Enter to return to A, or type skip: ',file=sys.stderr,end='',flush=True)
+        answer=input()
+        if answer.strip():
+            reset.update(status='skipped',reason='operator skipped return to A')
+            print('Return to A skipped.',flush=True)
+            return exit_code
+        reset['status']='moving'
+        reset['maximum_joint_error_rad']=reset_to_start(args)
+        reset['status']='complete'
+        return exit_code
+    except (KeyboardInterrupt,EOFError):
+        if reset['status']=='moving':
+            reset.update(status='interrupted',reason='operator interrupted the return motion')
+            print('\nReturn motion interrupted. Evaluation data is already saved.',flush=True)
+            return 130
+        reset.update(status='skipped',reason='operator interrupted return-to-start request')
+        print('\nReturn to A skipped. Evaluation data is already saved.',flush=True)
+        return exit_code
+    except Exception as exc:
+        reset.update(status='failed',error=repr(exc))
+        raise
+    finally:
+        (output/'reset.json').write_text(json.dumps(reset,indent=2)+'\n')
+        result['post_run_reset']=reset
+        result_path.write_text(json.dumps(result,indent=2)+'\n')
+
+
 def main(argv=None):
     args=act.parse_args(argv,configure)
     for key in ['sensor_timeout','sensor_warmup','stop_distance_m','guard_drop_m','sensor_check_interval']:
         if not np.isfinite(getattr(args,key)) or getattr(args,key)<=0:raise ValueError(f'{key} must be positive and finite')
     if not 1<=args.guard_min_zones<=64:raise ValueError('guard-min-zones must be 1..64')
     if args.compare_clear and not args.offline_row:raise ValueError('compare-clear is an offline diagnostic')
+    if args.reset_after_run and (args.offline_row or args.check_model or args.sensor_check or args.reset_only):
+        raise ValueError('reset-after-run applies only to a live robot rollout')
     args.guard_baseline=args.guard_baseline or args.ckpt_dir/'guard_baseline.npz'
     if args.reset_only:
-        from franky import Robot,JointMotion
-        robot=Robot(args.host);robot.recover_from_errors();robot.relative_dynamics_factor=args.dynamics
-        robot.move(JointMotion(args.start))
-        error=float(abs(base.read_robot_state(robot)['q']-args.start).max())
-        if error>args.goal_tolerance:raise RuntimeError(f'reset error {error:.4f} rad exceeds start tolerance')
-        print(f'Arm at A; maximum joint error {error:.4f} rad. Reset-only complete.');return
+        reset_to_start(args);return
     if args.sensor_check:
         sensor_check(args);return
     output=args.output or ROOT/'eval_rollouts'/act.datetime.now(act.timezone.utc).strftime('pc_act_%Y%m%dT%H%M%S%fZ')
@@ -396,7 +452,9 @@ def main(argv=None):
         (output/'config.json').write_text(json.dumps(dict(vars(args),policy_pair=policy.pair,
             sensor_names=NAMES,resolved_camera_names=policy.camera_names,resolved_device=policy.device),default=str,indent=2)+'\n')
         if args.offline_row:offline(args,policy,output)
-        else:return guarded_rollout(args,policy,output,cpus,LiveSkinContext(args))
+        else:
+            code=guarded_rollout(args,policy,output,cpus,LiveSkinContext(args))
+            return reset_after_run(args,output,code) if args.reset_after_run else code
     finally:os.sched_setaffinity(0,affinity)
 
 
