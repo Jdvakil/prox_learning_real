@@ -1,0 +1,25 @@
+836612071883  RealSense D435  USB 3.2
+943222071556  RealSense D435I  USB 3.2
+Live RGB-D viewer.
+Click the window so keys reach it:
+  Q or Esc    quit, including while cameras are still starting
+  F           toggle fullscreen (the window opens fullscreen)
+  close the window, or Ctrl-C, also quits
+Each tile is one camera: RGB on the left, depth aligned to colour on the right.
+Depth: near = red, far = purple, no return = black. Scale is 0-2 m (--depth-max).
+Status line: fps, frame number, age of the newest frame, percent of pixels with depth.
+STALE means that frame is older than 1 s. OFFLINE means the camera thread stopped.
+Starting cameras can take tens of seconds (USB reset and white balance). Still waiting after 90 s: use a USB 3 port, then --reset or --fps 15.
+resetting cameras 836612071883, 943222071556
+(franky) jaydv@verstappen:~/prox_learning_real$ python cameras.py --live --reset > cameras.txt
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+QFontDatabase: Cannot find font directory /home/jaydv/miniconda3/envs/franky/lib/python3.10/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/jaydv/miniconda3/envs/franky/lib/python3.10/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/jaydv/miniconda3/envs/franky/lib/python3.10/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/jaydv/miniconda3/envs/franky/lib/python3.10/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+QFontDatabase: Cannot find font directory /home/jaydv/miniconda3/envs/franky/lib/python3.10/site-packages/cv2/qt/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
