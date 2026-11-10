@@ -10,7 +10,7 @@ from unittest.mock import patch
 import h5py
 import numpy as np
 
-import eval_act_real as ev
+from prox_real import eval_act_real as ev
 
 
 class InferenceContractTests(unittest.TestCase):

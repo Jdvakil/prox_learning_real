@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import numpy as np
 
-OUT=Path(__file__).resolve().parent
+OUT=Path(OUT)  # passed in by prox_real.analysis.run
 D=np.load(OUT/'analysis_arrays.npz')
 M=json.loads((OUT/'metrics.json').read_text())
 plt.rcParams.update({'font.size':10,'axes.spines.top':False,'axes.spines.right':False,

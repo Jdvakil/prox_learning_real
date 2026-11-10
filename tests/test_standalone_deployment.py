@@ -6,8 +6,8 @@ import unittest
 
 import numpy as np
 
-import eval_act_real as ev
-from export_act_model import export
+from prox_real import eval_act_real as ev
+from prox_real.export_model import export
 
 
 class StandaloneTests(unittest.TestCase):

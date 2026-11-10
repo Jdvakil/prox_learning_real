@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import torch
 
-from train_pc_act import history_at,losses,Samples
+from prox_real.train_pc_act import history_at,losses,Samples
 from act_model.sensor_order import HYBRID_SKIN_SENSOR_ORDER
 
 

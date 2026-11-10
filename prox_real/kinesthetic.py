@@ -57,7 +57,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from record_dataset import (
+from .record_dataset import (
     GROUP,
     RATE_HZ,
     SensorListener,
@@ -96,7 +96,7 @@ class Console:
     """Single keys from this terminal (cbreak mode) plus line prompts.
 
     `kind` names each prompt (home, save, recover, reset, result) so a scripted stand-in can
-    answer it; see sim/twin.py.
+    answer it; see sim/twin.py (python utils.py sim).
     """
 
     def __enter__(self):
@@ -630,10 +630,10 @@ def replay(args, console):
     try:
         wait_for_sensors(listener, args.warmup_timeout, args.allow_missing)
         if not args.no_cameras:
-            from cameras import start_cameras
+            from .cameras import start_cameras
 
             if not args.wrist_serial:
-                raise SystemExit("--wrist-serial is required (python cameras.py lists the cameras), "
+                raise SystemExit("--wrist-serial is required (python data.py cameras lists the cameras), "
                                  "or pass --no-cameras")
             specs = [(name, serial) for name, serial in (("wrist_camera", args.wrist_serial),
                                                          ("exo_camera_1", args.exo_serial)) if serial]
@@ -755,5 +755,11 @@ def main(argv=None, console=None):
         replay(args, console)
 
 
-if __name__ == "__main__":
-    main()
+def teach_cli(argv):
+    sys.argv[0] = "data.py"          # help reads "data.py teach ..."
+    return main(["teach", *argv])
+
+
+def replay_cli(argv):
+    sys.argv[0] = "data.py"
+    return main(["replay", *argv])

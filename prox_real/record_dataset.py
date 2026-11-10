@@ -56,7 +56,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from sensor_layout import LINKS, NO_TARGET_MM, SENSORS_PER_LINK, sim_name
+from .sensor_layout import LINKS, NO_TARGET_MM, SENSORS_PER_LINK, sim_name
 
 GROUP = "239.0.0.1"
 RATE_HZ = 15.0
@@ -522,7 +522,7 @@ def camera_specs(args):
     specs.extend(tuple(spec) for spec in args.camera)
     if not specs:
         raise ValueError("specify --camera NAME SERIAL, --wrist-serial or --exo-serial "
-                         "(python cameras.py lists cameras), or pass --no-cameras")
+                         "(python data.py cameras lists cameras), or pass --no-cameras")
     names, serials = set(), set()
     for name, serial in specs:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name):
@@ -539,7 +539,7 @@ def camera_specs(args):
 
 def open_cameras(args):
     """Start all configured RealSense threads and wait for auto exposure."""
-    from cameras import start_cameras
+    from .cameras import start_cameras
 
     specs = camera_specs(args)
     return start_cameras(specs, args.cam_width, args.cam_height, args.cam_fps, reset=not args.no_camera_reset)
@@ -679,7 +679,7 @@ def report(records, recorders, path):
               f"{rec.ticks} tick frames, age median {np.median(ages):.0f} ms")
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="172.16.0.2", help="FCI IP of the robot")
     parser.add_argument("--dynamics", type=float, default=0.05, help="relative velocity, acceleration, and jerk")
@@ -693,7 +693,7 @@ def main():
     parser.add_argument("--no-gripper", action="store_true", help="do not read the Franka Hand width")
     parser.add_argument("--control-cpu", type=int, default=None,
                         help="CPU kept free of recording work for robot control (default: last CPU, -1: none)")
-    parser.add_argument("--wrist-serial", default=None, help="serial of the wrist D435 (python cameras.py)")
+    parser.add_argument("--wrist-serial", default=None, help="serial of the wrist D435 (python data.py cameras)")
     parser.add_argument("--exo-serial", default=None, help="serial of the exocentric D435")
     parser.add_argument("--camera", nargs=2, action="append", default=[], metavar=("NAME", "SERIAL"),
                         help="record a named RealSense; repeat for multiple cameras. May be combined with "
@@ -712,7 +712,7 @@ def main():
         default=None,
         help="row folder to create (default: recordings/<utc timestamp>/)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not args.no_cameras:
         try:
             camera_specs(args)
@@ -723,7 +723,3 @@ def main():
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         row = Path("recordings") / stamp
     collect(args, row)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,9 +1,9 @@
 """Write one offline HTML dashboard for a recorded row.
 
-    python dashboard_row.py recordings/<utc stamp>        # -> viz/<utc stamp>_dashboard.html
-    python dashboard_row.py recordings/*/                 # one dashboard per row
+    python data.py dashboard recordings/<utc stamp>        # -> viz/<utc stamp>_dashboard.html
+    python data.py dashboard recordings/*/                 # one dashboard per row
 
-Needs h5py, numpy and opencv. dashboard/template.html holds the page, dashboard/d3.min.js its charts.
+Needs h5py, numpy and opencv. dashboard_assets/template.html holds the page, dashboard_assets/d3.min.js its charts.
 """
 
 import argparse
@@ -205,10 +205,10 @@ def build(row, out_dir):
                     else "Check before using this row: " + "; ".join(problems) + ".")
 
     data = {"kinematics": kinematics, "sensors": sensors, "links": link_rows, "zones": zones, "frames": frames}
-    page = (HERE / "dashboard" / "template.html").read_text()
+    page = (HERE / "dashboard_assets" / "template.html").read_text()
     replacements = {"{{ROW}}": html.escape(row.name), "{{TAKEAWAY}}": html.escape(takeaway), "{{TILES}}": "".join(tiles),
                     "{{CAMERAS}}": "".join(figures), "{{FRAME_STEP}}": str(FRAME_STEP),
-                    "{{D3}}": (HERE / "dashboard" / "d3.min.js").read_text(),
+                    "{{D3}}": (HERE / "dashboard_assets" / "d3.min.js").read_text(),
                     "{{DATA}}": json.dumps(data, separators=(",", ":")).replace("</", "<\\/")}
     for key, value in replacements.items():
         page = page.replace(key, value)
@@ -218,14 +218,10 @@ def build(row, out_dir):
     print(f"wrote {path} ({path.stat().st_size / 1e6:.1f} MB): {takeaway}")
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("rows", type=Path, nargs="+", help="row folders holding trajectory.h5")
     parser.add_argument("--out", type=Path, default=Path("viz"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     for row in args.rows:
         build(row.resolve(), args.out)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,19 +1,18 @@
-"""Read-only full audit of the ACT 20-episode batch; outputs alongside this script."""
+"""Read-only full audit of a recorded A -> B batch (prox_real.analysis.run sets SOURCE and OUT)."""
 import csv
 import hashlib
 import json
 from pathlib import Path
-import sys
 
 import cv2
 import h5py
 import numpy as np
 
-OUT = Path(__file__).resolve().parent
-ROOT = OUT.parent
-sys.path.insert(0, str(ROOT))
-from record_act_waypoints import ReferencePlan
-from kinesthetic import Q_MIN, Q_MAX
+from ..record_act_waypoints import ReferencePlan
+from ..kinesthetic import Q_MIN, Q_MAX
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT = ROOT / 'act_20_analysis'
 
 SOURCE = ROOT / 'recordings/act_test_20'
 
@@ -292,6 +291,3 @@ def main():
     write_csv(OUT/'joint_statistics.csv',joint_stats)
     write_csv(OUT/'episode_statistics.csv',[{k:e[k] for k in ['episode','seed','ticks','duration_s','max_tracking_error_rad','tracking_rmse_rad','final_goal_error_rad','final_max_speed_rad_s','max_noise_rad','max_speed_rad_s','last_tick_minus_last_command_ms','velocity_vs_finite_difference_rmse_rad_s']} for e in episodes])
     print('Saved audit metrics:',OUT/'metrics.json',flush=True)
-
-
-if __name__=='__main__':main()

@@ -89,11 +89,11 @@ def backfill(run_dir, project=DEFAULT_PROJECT, entity=None, dry_run=False):
     print('Synced all historical epochs:',saved['url'])
 
 
-if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__)
+def main(argv=None):
+    parser=argparse.ArgumentParser(description='Upload a finished run\'s local metrics.jsonl to W&B.')
     parser.add_argument('--run-dir',type=Path,required=True)
     parser.add_argument('--project',default=DEFAULT_PROJECT)
     parser.add_argument('--entity')
     parser.add_argument('--dry-run',action='store_true')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     backfill(args.run_dir,args.project,args.entity,args.dry_run)

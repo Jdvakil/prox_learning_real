@@ -19,11 +19,11 @@ import time
 import h5py
 import numpy as np
 
-import record_dataset as base
-from record_act_waypoints import START, GOAL, CONTROL_HZ
-from kinesthetic import Q_MIN, Q_MAX, REPLAY_STIFFNESS, REPLAY_DAMPING
+from . import record_dataset as base
+from .record_act_waypoints import START, GOAL, CONTROL_HZ
+from .kinesthetic import Q_MIN, Q_MAX, REPLAY_STIFFNESS, REPLAY_DAMPING
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RUN = ROOT / "models/act_test_20"
 
 
@@ -109,7 +109,7 @@ class ACTInference:
                     stats = pickle.load(f)
                 except ModuleNotFoundError as exc:
                     raise ValueError("legacy pickled stats require the training NumPy environment; "
-                                     "export a portable model bundle with export_act_model.py") from exc
+                                     "export a portable model bundle with python model.py export act") from exc
         self.stats = {k: np.asarray(stats[k], dtype=np.float32) for k in
                       ("qpos_mean", "qpos_std", "action_mean", "action_std")}
         for name, dimension in (("qpos", self.state_dim), ("action", self.action_dim)):
@@ -414,7 +414,7 @@ def live(args, policy, output, control_cpus, context=None):
             result['termination_phase']='start_pose_check'
             initial = base.read_robot_state(robot)["q"]
             if np.max(abs(initial-np.asarray(args.start))) > args.goal_tolerance:
-                advice=("remove the obstacle, run 'python eval_pc_act_real.py --reset-only', then start the next trial. "
+                advice=("remove the obstacle, run 'python model.py eval pc-act --reset-only', then start the next trial. "
                         "For a clear reset path, --reset-to-start can reset before a PC-ACT run.") if context is not None else (
                         "check the reset motion and start pose; omit --no-reset to reset before evaluation.")
                 raise RuntimeError("arm is not at training start A; "+advice)
@@ -608,6 +608,3 @@ def main(argv=None):
         else:live(args,policy,output,control_cpus)
     finally:
         os.sched_setaffinity(0,affinity)
-
-
-if __name__=="__main__":main()

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import h5py
 import numpy as np
 
-from record_dataset import CameraRecorder, camera_specs, open_cameras
+from prox_real.record_dataset import CameraRecorder, camera_specs, open_cameras
 
 
 def options(**overrides):
@@ -21,7 +21,7 @@ class CameraConfigurationTests(unittest.TestCase):
     def test_multiple_cameras_without_wrist(self):
         specs = [("left", "111"), ("right", "222"), ("overhead", "333")]
         args = options(camera=specs)
-        with patch("cameras.start_cameras", return_value=[]) as start:
+        with patch("prox_real.cameras.start_cameras", return_value=[]) as start:
             open_cameras(args)
         start.assert_called_once_with(specs, 640, 480, 30, reset=False)
 
@@ -43,7 +43,7 @@ class CameraConfigurationTests(unittest.TestCase):
 class CameraRecordingTests(unittest.TestCase):
     def test_three_cameras_store_independent_rgbd_and_indices(self):
         # Exercise actual recorder threads and HDF5 writes; replace only video encoding.
-        with tempfile.TemporaryDirectory() as temp, patch("record_dataset.Mp4Writer") as writer:
+        with tempfile.TemporaryDirectory() as temp, patch("prox_real.record_dataset.Mp4Writer") as writer:
             row = Path(temp)
             with h5py.File(row / "trajectory.h5", "w") as handle:
                 recorders = []

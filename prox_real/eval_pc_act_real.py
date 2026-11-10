@@ -17,12 +17,12 @@ import threading
 import h5py
 import numpy as np
 
-import eval_act_real as act
-import record_dataset as base
-from sensor_layout import sim_name
+from . import eval_act_real as act
+from . import record_dataset as base
+from .sensor_layout import sim_name
 from act_model.sensor_order import HYBRID_SKIN_SENSOR_ORDER
 
-ROOT=Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL=ROOT/'models/pc_act_test_20'
 NAMES=list(HYBRID_SKIN_SENSOR_ORDER)
 
@@ -56,7 +56,7 @@ class PCInference(act.ACTInference):
         encoder_name={'policy_best.ckpt':'prox_encoder_best.pt','policy_last.ckpt':'prox_encoder_last.pt'}.get(args.ckpt_name)
         if encoder_name is None:raise ValueError('use a best or last policy and its matching encoder')
         pair_path=args.ckpt_dir/'policy_pair.json'
-        if not pair_path.exists():raise ValueError('deploy with export_pc_act_model.py first; missing checkpoint pair manifest')
+        if not pair_path.exists():raise ValueError('deploy with python model.py export pc-act first; missing checkpoint pair manifest')
         pair=json.loads(pair_path.read_text())
         if pair['policy_file']!=args.ckpt_name or pair['encoder_file']!=encoder_name:
             raise ValueError('policy/encoder filenames do not match the deployment pair')
@@ -456,6 +456,3 @@ def main(argv=None):
             code=guarded_rollout(args,policy,output,cpus,LiveSkinContext(args))
             return reset_after_run(args,output,code) if args.reset_after_run else code
     finally:os.sched_setaffinity(0,affinity)
-
-
-if __name__=='__main__':raise SystemExit(main())

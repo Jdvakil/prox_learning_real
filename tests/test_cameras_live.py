@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import cv2
 import numpy as np
 
-import cameras
+from prox_real import cameras
 
 
 def view(serial="111", depth_value=1000):

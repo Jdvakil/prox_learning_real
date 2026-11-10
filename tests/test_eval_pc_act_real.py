@@ -13,7 +13,7 @@ from unittest.mock import patch
 import h5py
 import numpy as np
 
-import eval_pc_act_real as pc
+from prox_real import eval_pc_act_real as pc
 from test_eval_act_real import FakeTracker
 
 
@@ -25,7 +25,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(h.shape,(40,32,8,8))
 
     def test_model_and_sensor_check_need_no_camera_serials(self):
-        import eval_act_real as act
+        from prox_real import eval_act_real as act
         args=act.parse_args(['--sensor-check'],pc.configure)
         self.assertTrue(args.sensor_check)
         self.assertTrue(args.no_reset)

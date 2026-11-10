@@ -16,7 +16,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-REAL = Path(__file__).resolve().parents[1]
+REAL = Path(__file__).resolve().parents[2]
 # prox_learning_real is checked out at prox_learning/submodules/prox_learning_real.
 DEFAULT_MODEL = REAL.parents[1] / "assets/robots/franka_skin/model_hybrid_franka_hand.xml"
 

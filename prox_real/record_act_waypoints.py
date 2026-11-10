@@ -20,8 +20,8 @@ from types import SimpleNamespace
 import h5py
 import numpy as np
 
-import record_dataset as base
-from kinesthetic import Q_MIN, Q_MAX, REPLAY_STIFFNESS, REPLAY_DAMPING
+from . import record_dataset as base
+from .kinesthetic import Q_MIN, Q_MAX, REPLAY_STIFFNESS, REPLAY_DAMPING
 
 
 START = [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
@@ -377,7 +377,3 @@ def main(argv=None):
             print(f"episode {i + 1}/{len(plans)}, seed {plan.seed}")
             collect_episode(robot, listener, cameras, plan, args,
                             output / f"episode_{i:04d}", control_cpus)
-
-
-if __name__ == "__main__":
-    main()

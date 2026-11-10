@@ -2,15 +2,15 @@
 
 Each camera runs in its own thread: colour (rgb8) and depth (z16) at the same size and rate,
 depth aligned to the colour image, and the newest pair kept with its frame number, device
-timestamp and arrival time (the 15 Hz logger in kinesthetic.py samples that newest pair).
+timestamp and arrival time (the 15 Hz logger in data.py teach / replay samples that newest pair).
 
-    python cameras.py                  # list connected cameras, save one colour + depth snapshot each
-    python cameras.py --out camera_check
-    python cameras.py --live           # all connected cameras: live RGB + aligned depth dashboard
-    python cameras.py --live --reset   # power-cycle cameras before viewing
-    python cameras.py --live --depth-max 1.5 --fps 15
-    python cameras.py --live --record              # same view, saved as camera_view.mp4
-    python cameras.py --live --record take.mp4     # same view, chosen path
+    python data.py cameras                  # list connected cameras, save one colour + depth snapshot each
+    python data.py cameras --out camera_check
+    python data.py cameras --live           # all connected cameras: live RGB + aligned depth dashboard
+    python data.py cameras --live --reset   # power-cycle cameras before viewing
+    python data.py cameras --live --depth-max 1.5 --fps 15
+    python data.py cameras --live --record              # same view, saved as camera_view.mp4
+    python data.py cameras --live --record take.mp4     # same view, chosen path
 
 While --live is open, click the window so keys reach it:
 
@@ -33,7 +33,7 @@ the window, or Ctrl-C finalizes the file. The viewer needs a graphical session
 uses the mp4v codec.
 
 Use the snapshots to aim the exocentric camera and check the wrist mount, and pass the serial
-numbers printed before the window to kinesthetic.py replay (--wrist-serial, --exo-serial).
+numbers printed before the window to data.py replay (--wrist-serial, --exo-serial).
 
 Needs pyrealsense2 (pip install pyrealsense2).
 """
@@ -184,7 +184,7 @@ def start_cameras(specs, width=640, height=480, fps=30, reset=True, settle=3.0):
     """Open (name, serial) cameras, wait until each one streams, then let them settle.
 
     On the robot PC a D435 often gives no frames on a fresh start until it is power-cycled
-    (python cameras.py failed the same way without --reset), so the cameras are reset first by
+    (python data.py cameras failed the same way without --reset), so the cameras are reset first by
     default. If one still gives no frames, all are reset and started once more. Auto white
     balance needs about 2 s after a start (the first frames come out orange), so the cameras keep
     streaming for `settle` seconds before this returns.
@@ -506,7 +506,7 @@ def live_view(devices, args):
             startup.join(timeout=0.2)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=Path("camera_check"))
     parser.add_argument("--width", type=int, default=640)
@@ -517,7 +517,7 @@ def main():
     parser.add_argument("--record", nargs="?", const=Path("camera_view.mp4"), default=None, type=Path,
                         help="with --live, save that dashboard view to this mp4 (default camera_view.mp4)")
     parser.add_argument("--depth-max", type=float, default=2.0, help="live depth color scale far distance in meters (default 2)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.record is not None and not args.live:
         parser.error("--record saves the live dashboard; also pass --live")
     if args.record is not None and args.fps <= 0:
@@ -554,7 +554,3 @@ def main():
               f"depth valid {100 * valid.size / depth.size:.0f}%"
               + (f", median {np.median(valid):.0f} mm" if valid.size else "")
               + f"  -> {args.out}/{serial}_rgb.png")
-
-
-if __name__ == "__main__":
-    main()

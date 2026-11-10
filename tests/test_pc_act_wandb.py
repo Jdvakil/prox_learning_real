@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from pc_act_wandb import flatten_metrics, read_history
+from prox_real.pc_act_wandb import flatten_metrics, read_history
 
 
 class WandbMetricsTests(unittest.TestCase):

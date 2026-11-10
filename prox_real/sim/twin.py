@@ -4,7 +4,7 @@ kinesthetic.py runs unchanged. This script stands in for everything it talks to:
 
   franky        Robot, Gripper, JointMotion, JointImpedanceTracker, TorqueStopMotion and
                 FrictionCompensationParams, backed by a thread that steps the lab scene
-                (sim/lab_scene.py) in real time under gravity compensation, as the Franka
+                (prox_real/sim/lab_scene.py) in real time under gravity compensation, as the Franka
                 controller does. Impedance motions apply K (q_ref - q) + D (dq_ref - dq), the
                 soft joint limits and the friction feedforward; JointMotion follows a quintic
                 profile timed from the FR3 limits x relative_dynamics_factor under stiff joint
@@ -22,11 +22,11 @@ Without --auto the keys and prompts are yours, in this terminal; --viewer opens 
 where you can drag the floating arm (double-click a link, then Ctrl + right-drag). The block and
 drawer are reset at every "reset the scene" prompt.
 
-  python sim/twin.py rehearse                            # teach --auto, then replay --auto
-  python sim/twin.py teach --auto                        # -> sim_out/demos/<stamp>.h5
-  python sim/twin.py replay --auto sim_out/demos/<stamp>.h5
+  python utils.py sim rehearse                            # teach --auto, then replay --auto
+  python utils.py sim teach --auto                        # -> sim_out/demos/<stamp>.h5
+  python utils.py sim replay --auto sim_out/demos/<stamp>.h5
                                                          # -> sim_out/dataset/rows/<stamp>_<demo>_r0/
-  python sim/twin.py replay --auto <demo> -- --speed 0.5 # flags after -- go to kinesthetic.py
+  python utils.py sim replay --auto <demo> -- --speed 0.5 # flags after -- go to data.py teach/replay
 
 Needs mujoco >= 3.2 and an EGL (or other offscreen) OpenGL; MUJOCO_GL defaults to egl.
 """
@@ -43,17 +43,14 @@ from pathlib import Path
 
 import numpy as np
 
-SIM = Path(__file__).resolve().parent
-REAL = SIM.parent
-sys.path.insert(0, str(REAL))
-sys.path.insert(0, str(SIM))
+REAL = Path(__file__).resolve().parents[2]
 os.environ.setdefault("MUJOCO_GL", "egl")
 
 import h5py  # noqa: E402
 import mujoco  # noqa: E402
 
-import lab_scene  # noqa: E402
-from sensor_layout import LINKS, NO_TARGET_MM, SENSORS_PER_LINK, sim_name  # noqa: E402
+from . import lab_scene  # noqa: E402
+from ..sensor_layout import LINKS, NO_TARGET_MM, SENSORS_PER_LINK, sim_name  # noqa: E402
 
 GROUP = "239.0.0.1"
 MAX_RANGE_M = 4.0
@@ -867,7 +864,7 @@ class IK:
             step = J.T @ np.linalg.solve(JJt, np.concatenate([e_p, e_r]))
             null = np.eye(7) - J.T @ np.linalg.solve(JJt, J)
             q = np.clip(q + step + null @ (0.05 * (lab_scene.HOME - q)), self.lo, self.hi)
-        raise SystemExit(f"IK did not converge for {np.round(pos, 3)} (edit LAB in sim/lab_scene.py)")
+        raise SystemExit(f"IK did not converge for {np.round(pos, 3)} (edit LAB in prox_real/sim/lab_scene.py)")
 
 
 class ScriptedConsole:
@@ -953,7 +950,7 @@ class Twin:
     def console(self, demonstrator=None):
         if self.args.auto:
             return ScriptedConsole(self, demonstrator)
-        import kinesthetic
+        from .. import kinesthetic
 
         twin = self
 
@@ -968,7 +965,7 @@ class Twin:
         return SimConsole()
 
     def teach(self, extra):
-        import kinesthetic
+        from .. import kinesthetic
 
         demonstrator = None
         if self.args.auto:
@@ -985,7 +982,7 @@ class Twin:
         return sorted(set(out.glob("*.h5")) - before)
 
     def replay(self, demos, extra):
-        import kinesthetic
+        from .. import kinesthetic
 
         rows = self.args.out / "dataset" / "rows"
         before = set(rows.glob("*")) if rows.is_dir() else set()
@@ -1000,8 +997,8 @@ class Twin:
         return new
 
 
-def main():
-    argv = sys.argv[1:]
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
     extra = []
     if "--" in argv:
         cut = argv.index("--")
@@ -1041,7 +1038,3 @@ def main():
             print("[sim] rows: " + (", ".join(map(str, rows)) or "none saved"))
     finally:
         twin.stop()
-
-
-if __name__ == "__main__":
-    main()

@@ -23,9 +23,9 @@ from torch.utils.data import DataLoader, Dataset
 from act_model import build_model
 from act_model.sensor_order import HYBRID_SKIN_SENSOR_ORDER
 from act_model.surface_geometry import SurfaceGeometryEncoder, save_encoder_checkpoint
-from eval_act_real import read_training_config
+from .eval_act_real import read_training_config
 
-ROOT=Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def digest(path):
@@ -153,13 +153,38 @@ def save_pair(run,label,model,encoder,metrics,epoch):
                             frozen=False,extra=dict(policy_tap='readout',epoch=epoch,metrics=metrics))
 
 
-def main():
+def detach(argv):
+    """Start this trainer as a detached process; log and launch info beside the run directory."""
+    import subprocess
+    import sys
+
+    argv=[a for a in argv if a!='--detach']
+    if '--run-dir' in argv:run=Path(argv[argv.index('--run-dir')+1])
+    else:
+        run=ROOT/'training_runs'/datetime.now(timezone.utc).strftime('pc_act_readout_%Y%m%dT%H%M%SZ')
+        argv=['--run-dir',str(run),*argv]
+    run=run.resolve()
+    if run.exists():raise FileExistsError(run)
+    run.parent.mkdir(parents=True,exist_ok=True)
+    # The trainer creates the unique run directory; keep its startup log beside it.
+    log=run.parent/(run.name+'.log')
+    command=[sys.executable,'-u',str(ROOT/'model.py'),'train',*argv]
+    with log.open('x') as output:
+        process=subprocess.Popen(command,cwd=ROOT,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
+    info=dict(pid=process.pid,run_dir=str(run),log=str(log),command=command)
+    (run.parent/(run.name+'.launch.json')).write_text(json.dumps(info,indent=2)+'\n')
+    print(json.dumps(info,indent=2))
+
+
+def main(argv=None):
+    if argv is not None and '--detach' in argv:return detach(argv)
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--data',type=Path,default=ROOT/'recordings/act_test_20')
     p.add_argument('--act-checkpoint',type=Path,default=ROOT/'models/act_test_20')
     p.add_argument('--encoder-checkpoint',type=Path)
     p.add_argument('--initialization',choices=['scratch','act'],default='scratch')
     p.add_argument('--run-dir',type=Path,required=True)
+    p.add_argument('--detach',action='store_true',help='run in the background (run dir defaults to training_runs/pc_act_readout_<utc>)')
     p.add_argument('--epochs',type=int,default=2000)
     p.add_argument('--batch-size',type=int,default=8)
     p.add_argument('--lr',type=float,default=1e-5)
@@ -172,7 +197,7 @@ def main():
     p.add_argument('--wandb-project',default='PC_ACT_experiments')
     p.add_argument('--wandb-entity')
     p.add_argument('--no-wandb',action='store_true',help='write local metrics only')
-    args=p.parse_args()
+    args=p.parse_args(argv)
     if args.epochs<1 or args.batch_size<1 or args.validate_every<1 or args.ablate_every<1:p.error('counts must be positive')
     if args.device.startswith('cuda') and not torch.cuda.is_available():raise RuntimeError('CUDA unavailable; training must be launched with GPU access')
     random.seed(args.seed);np.random.seed(args.seed);torch.manual_seed(args.seed)
@@ -219,7 +244,7 @@ def main():
     signal.signal(signal.SIGTERM,interrupt);signal.signal(signal.SIGINT,interrupt)
     wandb_run=None
     if not args.no_wandb:
-        from pc_act_wandb import start_run
+        from .pc_act_wandb import start_run
         wandb_run=start_run(run,provenance,args.wandb_project,args.wandb_entity)
     print(f'PC-ACT run: {run}; device={torch.cuda.get_device_name() if args.device.startswith("cuda") else args.device}; '
           f'train={train_ids}, val={val_ids}; policy_init={args.initialization}; '
@@ -252,17 +277,14 @@ def main():
                 print(json.dumps(latest),flush=True)
             with (run/'metrics.jsonl').open('a') as f:f.write(json.dumps(latest)+'\n')
             if wandb_run is not None:
-                from pc_act_wandb import flatten_metrics
+                from .pc_act_wandb import flatten_metrics
                 wandb_run.log(flatten_metrics(latest),step=epoch)
     finally:
         save_pair(run,'last',model,encoder,latest,epoch)
         (run/'progress.json').write_text(json.dumps(dict(latest,best_validation_l1=best,pid=os.getpid(),
             status='interrupted' if stop[0] else ('complete' if epoch==args.epochs-1 else 'failed')),indent=2)+'\n')
         if wandb_run is not None:
-            from pc_act_wandb import read_history,set_summary
+            from .pc_act_wandb import read_history,set_summary
             progress=json.loads((run/'progress.json').read_text())
             if (run/'metrics.jsonl').exists():set_summary(wandb_run,run,read_history(run),progress)
             wandb_run.finish(exit_code=0 if progress['status']=='complete' else 1)
-
-
-if __name__=='__main__':main()

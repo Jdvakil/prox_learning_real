@@ -4,9 +4,39 @@ proximity sensors and two RealSense D435s (wrist, exocentric).
 
 **Standalone lab deployment:** collection, the ACT model architecture, the trained model,
 and evaluation are contained in this repository. No parent `prox_learning` installation
-or sibling ACT checkout is needed. See [LAB_SETUP.txt](LAB_SETUP.txt) for dependency setup,
-transfer, and hardware-free checks. `python make_lab_bundle.py` creates a transferable
+or sibling ACT checkout is needed. See [Lab PC setup](#lab-pc-setup) for dependency setup,
+transfer, and hardware-free checks. `python utils.py bundle` creates a transferable
 `dist/prox_learning_real_lab.tar.gz` with code, model weights and the local Franky source.
+
+## Commands
+
+Three scripts, run from this directory. `python <script>` lists its commands, and
+`python <script> <command> -h` lists a command's flags.
+
+```
+python data.py cameras      list RealSense cameras, save snapshots, --live view / --record
+python data.py record       move through POSITIONS, log robot + 40 sensors + cameras
+python data.py waypoints    noisy A -> B episodes for ACT
+python data.py teach        kinesthetic teaching (arm floats, move it by hand)
+python data.py replay       replay taught demos on the stiff tracker, log rows
+python data.py dashboard    offline HTML dashboard of recorded rows -> viz/
+python data.py analyze      audit an A -> B batch (metrics, plots, report) -> act_20_analysis/
+
+python model.py train       train PC-ACT on recorded episodes (--detach: background job)
+python model.py eval        eval act | eval pc-act  (--check-model, --offline-row, or live)
+python model.py export      export act | export pc-act: trained run -> models/
+python model.py wandb-sync  upload a finished run's metrics to W&B
+
+python utils.py check       Python packages + deployed model files, no hardware
+python utils.py bundle      dist/prox_learning_real_lab.tar.gz for the lab PC
+python utils.py robot-test  move the end effector 20 cm forward at 5% speed
+python utils.py sim         rehearse teach / replay on the MuJoCo bench
+```
+
+The code behind them is in `prox_real/` (one module per command, e.g. `prox_real/record_dataset.py`,
+`prox_real/eval_pc_act_real.py`; `prox_real/sim/` for the MuJoCo twin). `act_model/` is the
+bundled ACT architecture, `models/` the deployed checkpoints, `tests/` the unit tests
+(`python -m pytest tests`).
 
 ```bash
 git submodule update --init --recursive    # franky 2.0 (build it per submodules/franky)
@@ -26,13 +56,13 @@ Python environment. No parent `prox_learning` checkout is required.
    ```
 
    Keep the working local Franky installation that exposes `JointImpedanceTracker`.
-   If it is missing, follow the build instructions in [LAB_SETUP.txt](LAB_SETUP.txt).
+   If it is missing, follow the build instructions in [Lab PC setup](#lab-pc-setup).
 
 2. Check dependencies and load the model without connecting to the robot or cameras:
 
    ```bash
-   python check_lab_setup.py
-   python eval_act_real.py --check-model --device cpu
+   python utils.py check
+   python model.py eval act --check-model --device cpu
    ```
 
    The setup check should pass. The model check should report `"finite": true`,
@@ -43,7 +73,7 @@ Python environment. No parent `prox_learning` checkout is required.
 3. Enable FCI, clear the trained motion and reset path, and run one evaluation:
 
    ```bash
-   python eval_act_real.py \
+   python model.py eval act \
      --wrist-serial 836612071883 \
      --exo-serial 943222071556 \
      --output eval_rollouts/trial_01
@@ -80,17 +110,17 @@ model and background profile must be present in `models/pc_act_test_20`.
 git lfs pull
 
 # Check the paired policy/encoder; no robot or camera connections:
-python eval_pc_act_real.py --check-model --device cpu
+python model.py eval pc-act --check-model --device cpu
 
 # Remove the obstacle and clear the reset path, then move to A and exit:
-python eval_pc_act_real.py --reset-only
+python model.py eval pc-act --reset-only
 
 # With the arm stationary, pass the test object near each sensor:
-python eval_pc_act_real.py --sensor-check --duration 120 \
+python model.py eval pc-act --sensor-check --duration 120 \
   --sensor-check-interval 1 --output eval_rollouts/sensor_check_all_40_01
 
 # Position the soft, fixed test obstacle and run with live proximity:
-python eval_pc_act_real.py \
+python model.py eval pc-act \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --proximity-mode live --output eval_rollouts/pc_act_obstacle_live_01
 ```
@@ -109,10 +139,10 @@ the same obstacle position before running the final command:
 
 ```bash
 # Run with the obstacle removed:
-python eval_pc_act_real.py --reset-only
+python model.py eval pc-act --reset-only
 
 # Restore the test obstacle, then run:
-python eval_pc_act_real.py \
+python model.py eval pc-act \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --proximity-mode clear --output eval_rollouts/pc_act_obstacle_clear_01
 ```
@@ -128,7 +158,7 @@ To evaluate policy behavior without the distance-based guard aborting the trial,
 add `--no-proximity-guard`:
 
 ```bash
-python eval_pc_act_real.py \
+python model.py eval pc-act \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --proximity-mode live --no-proximity-guard \
   --output eval_rollouts/pc_act_obstacle_live_unguarded_01
@@ -143,12 +173,12 @@ and keep the operator stop ready. For a matched cleared-input trial, use the sam
 flag with `--proximity-mode clear` and a new output directory.
 
 The policy normally ends at B. If the next trial reports `arm is not at training
-start A`, remove the obstacle and run `python eval_pc_act_real.py --reset-only`
+start A`, remove the obstacle and run `python model.py eval pc-act --reset-only`
 before starting that trial. To return to A at the end of each normally completed
 run, add `--reset-after-run`:
 
 ```bash
-python eval_pc_act_real.py \
+python model.py eval pc-act \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --proximity-mode live --no-proximity-guard --reset-after-run \
   --output eval_rollouts/pc_act_live_return_01
@@ -166,12 +196,12 @@ so stdout can still be redirected to your evaluation log. To reset before evalua
 ## Demonstrations: kinesthetic teach, then replay
 
 ```bash
-python cameras.py                                    # serials + one colour/depth snapshot each -> camera_check/
-python cameras.py --reset                            # same, USB power-cycle first (if "no frames" / stalled)
-python cameras.py --live                             # live RGB + aligned-depth dashboard for all connected cameras
-python cameras.py --live --reset --depth-max 2        # reset first; depth display scale 0–2 m
-python kinesthetic.py teach --home-gripper           # -> demos/<utc stamp>.h5
-python kinesthetic.py replay demos/*.h5 --wrist-serial <serial> --exo-serial <serial>
+python data.py cameras                                    # serials + one colour/depth snapshot each -> camera_check/
+python data.py cameras --reset                            # same, USB power-cycle first (if "no frames" / stalled)
+python data.py cameras --live                             # live RGB + aligned-depth dashboard for all connected cameras
+python data.py cameras --live --reset --depth-max 2        # reset first; depth display scale 0–2 m
+python data.py teach --home-gripper           # -> demos/<utc stamp>.h5
+python data.py replay demos/*.h5 --wrist-serial <serial> --exo-serial <serial>
                                                      # -> dataset/rows/<utc stamp>_<demo>_r0/
 ```
 
@@ -206,39 +236,39 @@ A row is the layout prox_learning's `scripts/convert_pact_place_to_act.py` conve
 PC-ACT: `trajectory.h5` (sim datagen layout `traj_0/obs/...`, `actions/joint_pos`, raw extras
 under `traj_0/real/` including per-camera `depth_mm`, the replayed demo under `traj_0/teach/`),
 `episode_00000000_wrist_camera.mp4`, `episode_00000000_exo_camera_1.mp4`, `result.json`.
-See the docstring of `kinesthetic.py`. About 8 MB per second of replay with depth.
+See the docstring of `prox_real/kinesthetic.py`. About 8 MB per second of replay with depth.
 
 ## Rehearse in simulation
 
-`sim/twin.py` runs `kinesthetic.py` unchanged against a MuJoCo copy of the bench
-(`sim/lab_scene.py`: table, rails, two-drawer cabinet, block, both D435s; skin model from
+`python utils.py sim` (`prox_real/sim/twin.py`) runs teach / replay unchanged against a MuJoCo copy of the bench
+(`prox_real/sim/lab_scene.py`: table, rails, two-drawer cabinet, block, both D435s; skin model from
 prox_learning `assets/robots/franka_skin/model_hybrid_franka_hand.xml`): a physics-backed fake
 franky, the 41 sensors ray-cast and sent on the real UDP ports, and rendered D435 streams.
 
 ```bash
-python sim/twin.py rehearse                          # scripted teach, then replay -> sim_out/
-python sim/twin.py teach --viewer                    # your keys; drag the floating arm in the viewer
-python sim/twin.py replay sim_out/demos/<stamp>.h5 -- --speed 0.5
+python utils.py sim rehearse                          # scripted teach, then replay -> sim_out/
+python utils.py sim teach --viewer                    # your keys; drag the floating arm in the viewer
+python utils.py sim replay sim_out/demos/<stamp>.h5 -- --speed 0.5
 ```
 
-Edit `LAB` in `sim/lab_scene.py` with the measured bench (cabinet, block, tripod, wrist mount).
+Edit `LAB` in `prox_real/sim/lab_scene.py` with the measured bench (cabinet, block, tripod, wrist mount).
 
 ## Waypoint recorder
 
 ```bash
-python record_dataset.py --wrist-serial <serial> --exo-serial <serial>   # -> recordings/<utc stamp>/
+python data.py record --wrist-serial <serial> --exo-serial <serial>   # -> recordings/<utc stamp>/
 
 # Any number of named cameras (no wrist camera required):
-python record_dataset.py --camera wrist_camera <serial1> --camera exo_camera_1 <serial2> --camera exo_camera_2 <serial3>
+python data.py record --camera wrist_camera <serial1> --camera exo_camera_1 <serial2> --camera exo_camera_2 <serial3>
 ```
 
 Repeat `--camera NAME SERIAL` for each RealSense. Names and serials must be unique; names
 use letters, digits, underscores and hyphens, starting with a letter or digit. The existing
 `--wrist-serial` and `--exo-serial` flags still work and may be combined with `--camera`.
-Use `python cameras.py` to find the connected serials. Use `wrist_camera` and `exo_camera_1`
+Use `python data.py cameras` to find the connected serials. Use `wrist_camera` and `exo_camera_1`
 for the corresponding ACT converter views.
 
-The arm moves through `POSITIONS` (top of `record_dataset.py`) while the robot state and the
+The arm moves through `POSITIONS` (top of `prox_real/record_dataset.py`) while the robot state and the
 newest packet of all 41 sensors are logged on a fixed 15 Hz clock. All configured cameras are recorded at
 their full rate (30 fps by default): every frame's depth goes into `trajectory.h5` (`traj_0/real/cameras/<name>/`,
 with per-frame `t`, `frame_number`, and `tick_frame` = the frame used at each 15 Hz tick) and its
@@ -258,17 +288,17 @@ frame in the h5, large). Gripper only read (width), not commanded.
 
 ### Simple start-to-goal ACT smoke test
 
-`record_act_waypoints.py` records one A -> B motion per row, with the reset to A outside
+`python data.py waypoints` records one A -> B motion per row, with the reset to A outside
 the recording. It defaults to two episodes with the same start and goal; each seed produces
 a different smooth perturbation of the path. Review `START` / `GOAL` in the script for the
 workspace, or supply seven joint angles in radians using `--start` / `--goal`.
 
 ```bash
 # Validate and save the 20 reference plans without connecting to any hardware:
-python record_act_waypoints.py --dry-run --episodes 20 --output /tmp/act_plans
+python data.py waypoints --dry-run --episodes 20 --output /tmp/act_plans
 
 # Collect two episodes first (default); change to --episodes 20 for the batch:
-python record_act_waypoints.py --episodes 2 --seed 0 \
+python data.py waypoints --episodes 2 --seed 0 \
   --wrist-serial <serial1> --exo-serial <serial2> --output recordings/act_smoke
 ```
 
@@ -281,7 +311,7 @@ The existing ACT converter still pads its fixed observation/action dimensions wi
 for missing gripper fields; an arm-only training setup should select the first seven entries.
 Each row can be processed by the existing ACT converter using the usual camera names.
 Repeat `--camera NAME SERIAL` for more cameras; the converter's supported camera names
-still apply. RGB-D/proximity storage flags match `record_dataset.py`.
+still apply. RGB-D/proximity storage flags match `data.py record`.
 
 `--noise-std 0.01` is the Gaussian coefficient scale in radians for three low-frequency sine
 modes per joint. A smooth envelope makes perturbation, velocity and acceleration zero at
@@ -306,7 +336,7 @@ time shift is applied here; account for any shift performed by the training load
 
 ### Evaluate the trained ACT policy on the real arm
 
-`eval_act_real.py` loads `models/act_test_20/policy_best.ckpt`, portable `dataset_stats.npz`,
+`python model.py eval act` loads `models/act_test_20/policy_best.ckpt`, portable `dataset_stats.npz`,
 and saved training/image metadata. Its model architecture is bundled in `act_model/`.
 There is no runtime dependency on the parent repository, an ACT installation, or the
 converted training dataset. Legacy directories containing `dataset_stats.pkl` are also
@@ -318,17 +348,17 @@ are sent to the robot. It never connects to a gripper. This is vanilla RGB + joi
 depth and proximity are not model inputs, and PACT checkpoints are rejected.
 
 Install `requirements-eval.txt` in an environment with the local Franky build exposing
-`JointImpedanceTracker`. Use `python check_lab_setup.py` to check dependencies, then
-`python eval_act_real.py --check-model --device cpu` to load the model and run a dummy
-prediction without connecting to hardware. See `LAB_SETUP.txt` for the standalone setup.
+`JointImpedanceTracker`. Use `python utils.py check` to check dependencies, then
+`python model.py eval act --check-model --device cpu` to load the model and run a dummy
+prediction without connecting to hardware. See [Lab PC setup](#lab-pc-setup) for the standalone setup.
 
 ```bash
 # No hardware connection: checkpoint and image-pipeline check on a recorded episode.
-python eval_act_real.py --offline-row recordings/act_test_20/episode_0000 \
+python model.py eval act --offline-row recordings/act_test_20/episode_0000 \
   --device cpu --output eval_rollouts/offline_ep0
 
 # One real rollout: resets to training start A, runs the policy, and evaluates arrival at B.
-python eval_act_real.py \
+python model.py eval act \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --output eval_rollouts/real_trial_01
 ```
@@ -377,12 +407,12 @@ The original ACT loader shifts real-robot labels by one observation. Offline out
 errors against both the active recorded reference and this previous-action target. Live
 execution sends absolute predicted positions directly; it does not apply an extra shift.
 Legacy normalization statistics pickled with NumPy 2 require a compatible NumPy runtime.
-The bundled NPZ statistics avoid that restriction. `export_act_model.py` packages updated
+The bundled NPZ statistics avoid that restriction. `python model.py export act` packages updated
 checkpoints, statistics and metadata into another self-contained model folder.
 
 ### Real PC-ACT evaluation with an off-camera obstacle
 
-`eval_pc_act_real.py` loads the policy and paired surface encoder from
+`python model.py eval pc-act` loads the policy and paired surface encoder from
 `models/pc_act_test_20`. The bundled pair is the best scratch-trained checkpoint
 (epoch 1825). It verifies both weight checksums before connecting to the robot.
 It feeds the same canonical 40-sensor, eight-tick causal history as training; each
@@ -395,17 +425,17 @@ prevention or sufficient stopping clearance.
 
 ```bash
 # Check the paired model without hardware:
-python eval_pc_act_real.py --check-model --device cpu
+python model.py eval pc-act --check-model --device cpu
 
 # Move to A with the obstacle removed and the reset path clear, then exit:
-python eval_pc_act_real.py --reset-only
+python model.py eval pc-act --reset-only
 
 # With the arm stationary, check each sensor without moving the robot:
-python eval_pc_act_real.py --sensor-check --duration 120 \
+python model.py eval pc-act --sensor-check --duration 120 \
   --output eval_rollouts/sensor_check_all_40_01
 
 # Run one PC-ACT rollout; the arm must already be at A:
-python eval_pc_act_real.py \
+python model.py eval pc-act \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --output eval_rollouts/pc_act_obstacle_live_01
 ```
@@ -441,7 +471,7 @@ For a matched sensor-ablation trial, remove the object, reset to A, restore the 
 object location, then repeat with cleared policy proximity:
 
 ```bash
-python eval_pc_act_real.py --proximity-mode clear \
+python model.py eval pc-act --proximity-mode clear \
   --wrist-serial 836612071883 --exo-serial 943222071556 \
   --output eval_rollouts/pc_act_obstacle_clear_01
 ```
@@ -474,18 +504,18 @@ tracebacks; guard stops are not silently bypassed.
 No-hardware replay and live-versus-clear policy comparison:
 
 ```bash
-python eval_pc_act_real.py --offline-row recordings/act_test_20/episode_0000 \
+python model.py eval pc-act --offline-row recordings/act_test_20/episode_0000 \
   --offline-steps 10 --compare-clear --device cpu --output eval_rollouts/pc_act_replay
 ```
 
-To deploy another completed run, use `export_pc_act_model.py --source RUN_DIR
+To deploy another completed run, use `python model.py export pc-act --source RUN_DIR
 --destination models/NEW_MODEL --background-data recordings/act_test_20`, then
 select that folder with `--ckpt-dir`. Copy the complete exported folder, including
 its encoder, pair manifest, NPZ statistics, image settings and guard background.
 
 ### Standalone PC-ACT trajectory overfit training
 
-`train_pc_act.py` reads the 20 raw rows in `recordings/act_test_20` directly; no parent
+`python model.py train` reads the 20 raw rows in `recordings/act_test_20` directly; no parent
 repository, converter or dataset registry is needed. It uses the local ACT architecture
 plus a shared surface encoder: eight causal 15 Hz snapshots are each repeated four times,
 mapped to 20 cm closeness, and encoded as 40 sensor tokens with 128 readout features each.
@@ -497,7 +527,7 @@ canonical order in `act_model/sensor_order.py`.
 python -m pip install -r requirements-training.txt
 
 # Start the GPU job detached; paths and PID are printed and saved beside the run.
-python launch_pc_act.py --run-dir training_runs/my_pc_act_scratch \
+python model.py train --detach --run-dir training_runs/my_pc_act_scratch \
   --epochs 2000 --initialization scratch
 
 # Monitor without attaching to the training process:
@@ -514,7 +544,7 @@ logging. The run URL is printed in the log and saved to `wandb_run.json`. The or
 An older completed local run can be synced without retraining:
 
 ```bash
-python pc_act_wandb.py --run-dir training_runs/my_completed_run \
+python model.py wandb-sync --run-dir training_runs/my_completed_run \
   --entity jayluvsgeography --project PC_ACT_experiments
 ```
 
@@ -543,8 +573,8 @@ statistics, metrics JSONL, progress JSON, and paired `policy_best.ckpt` /
 surface encoder. Every 100 epochs, descriptive sensor ablations compare live proximity,
 all-clear proximity, shuffled histories, and a synthetic near return on four sensors.
 Ablation effects measure dependence on proximity; they do not measure collision avoidance.
-`eval_act_real.py` is the vanilla ACT evaluator and deliberately rejects PC-ACT
-checkpoints; use `eval_pc_act_real.py` with the exported paired checkpoint for PC-ACT.
+`model.py eval act` is the vanilla ACT evaluator and deliberately rejects PC-ACT
+checkpoints; use `model.py eval pc-act` with the exported paired checkpoint for PC-ACT.
 
 The recorded paths contain no obstacle-avoidance demonstrations. Low imitation error or
 responses to synthetic sensor changes cannot establish collision avoidance. For an advisor
@@ -557,13 +587,56 @@ avoidance training objective before claiming learned avoidance behavior.
 
 Cameras: on the robot PC a D435 gives no frames on a fresh start until it is USB power-cycled
 (2026-10-28: `cameras.py` and `record_dataset.py` both failed with "no frames" / "Frame didn't
-arrive" until `cameras.py --reset`). `record_dataset.py` and `kinesthetic.py replay` therefore
+arrive" until `cameras.py --reset`). `data.py record`, `data.py waypoints` and `data.py replay` therefore
 reset the cameras they use before starting them (about 5 s), and if one still gives no frames
 they reset and retry once. `--no-camera-reset` skips the first reset.
 
+## Lab PC setup
+
+Only this repository is needed on the lab PC. Transfer it one of two ways:
+
+```bash
+python utils.py bundle                    # -> dist/prox_learning_real_lab.tar.gz (code, models, Franky source)
+tar -xzf prox_learning_real_lab.tar.gz && cd prox_learning_real          # on the lab PC
+```
+
+The archive excludes recordings, analysis output, Git metadata, credentials, installed
+binaries and caches, and contains the real checkpoints. Or clone with Git; the checkpoints
+use Git LFS:
+
+```bash
+git lfs install
+git submodule update --init --recursive
+git lfs pull
+```
+
+Python 3.10 or 3.11, in the environment with the working Franky build:
+
+```bash
+python -m pip install -r requirements-collection.txt   # collection only
+python -m pip install -r requirements-eval.txt         # + ACT / PC-ACT evaluation (Torch 2.7.1 / torchvision 0.22.1)
+python -m pip install -r requirements-training.txt     # + training and W&B
+```
+
+Keep a working Franky installation if it exposes `JointImpedanceTracker`. Otherwise build
+the included source after setting up the robot-compatible libfranka, Eigen3 (>= 3.4),
+ruckig (0.17.3), CMake / compiler and pybind11:
+
+```bash
+python -m pip install --no-build-isolation ./submodules/franky
+```
+
+Hardware-free checks: `python utils.py check` (`--offline-only` before the camera and robot
+drivers are installed) and `python model.py eval act --check-model --device cpu`, which loads
+the checkpoint and predicts a finite (50, 8) action chunk from dummy input without moving the
+robot. To deploy a newly trained ACT model, run `python model.py export act --source <run dir>
+--data-dir <converted dataset> --destination models/<name>` in the training environment (or
+`--image-height` / `--image-width` instead of `--data-dir`) and copy the whole model folder;
+`--ckpt-dir models/<name>` selects it at evaluation.
+
 ## Sensors
 
-`sensor_layout.py` holds the ports, sensor counts and the mapping to the sim camera names.
+`prox_real/sensor_layout.py` holds the ports, sensor counts and the mapping to the sim camera names.
 
 ```
 link1        port 5004   7 sensors
@@ -584,6 +657,6 @@ zones (4000 = no target), block 2 = block 1 plus low-confidence fills.
 In the prox_learning repo: `python scripts/real_skin_viz.py <recording or row>/trajectory.h5`
 writes a 3D replay (skin model moving as recorded, zones projected from each sensor).
 
-Dashboard: `python dashboard_row.py recordings/<utc stamp>` writes `viz/<utc stamp>_dashboard.html`, one
+Dashboard: `python data.py dashboard recordings/<utc stamp>` writes `viz/<utc stamp>_dashboard.html`, one
 offline file: pass/warn tiles (blocked camera check included), synced camera and sensor replay, joint
 position and velocity, nearest return per link, packet rates and stuck zones. Needs h5py, numpy, opencv.

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import h5py
 import numpy as np
 
-import record_act_waypoints as act
+from prox_real import record_act_waypoints as act
 
 
 class ReferenceTests(unittest.TestCase):

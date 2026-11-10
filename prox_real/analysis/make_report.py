@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import numpy as np
 
-P=Path(__file__).resolve().parent
+P=Path(OUT)  # passed in by prox_real.analysis.run
 M=json.loads((P/'metrics.json').read_text())
 E=M['episode_metrics'];C=M['camera_metrics'];D=np.load(P/'analysis_arrays.npz')
 plots=json.loads((P/'plot_index.json').read_text())
