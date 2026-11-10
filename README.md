@@ -17,6 +17,7 @@ Three scripts, run from this directory. `python <script>` lists its commands, an
 python data.py cameras      list RealSense cameras, save snapshots, --live view / --record
 python data.py record       move through POSITIONS, log robot + 40 sensors + cameras
 python data.py waypoints    noisy A -> B episodes for ACT
+python data.py pick         scripted pick of a block at a fixed spot (--set-pose first)
 python data.py teach        kinesthetic teaching (arm floats, move it by hand)
 python data.py replay       replay taught demos on the stiff tracker, log rows
 python data.py dashboard    offline HTML dashboard of recorded rows -> viz/
@@ -252,6 +253,33 @@ python utils.py sim replay sim_out/demos/<stamp>.h5 -- --speed 0.5
 ```
 
 Edit `LAB` in `prox_real/sim/lab_scene.py` with the measured bench (cabinet, block, tripod, wrist mount).
+
+## Pick up the block (scripted)
+
+No model and no vision: the arm goes to one fixed grasp pose that you show it once.
+
+```bash
+# 1. Block at its spot. In Desk guiding mode, move the arm so the open fingers are around the
+#    block; then FCI on, arm still:
+python data.py pick --set-pose                        # -> pick_pose.json, no motion
+
+# 2. Collect (the arm moves; clear the workspace):
+python data.py pick --episodes 10 --wrist-serial 836612071883 --exo-serial 943222071556
+                                                      # -> recordings/pick_<utc stamp>/episode_0000/ ...
+```
+
+Recorded per episode: start at HOME (`[0, 0, 0, -2.2, 0, 2.2, 0.7]`) with the gripper open,
+move 10 cm above the grasp pose, go down, close the gripper (20 N), lift 10 cm, hold 1 s. Not
+recorded: lower the block back onto its spot, open, back off, return HOME, so the next episode
+finds the block in the same place. Same row layout as the other recorders. Actions are the
+measured joints at the next 15 Hz tick plus the gripper command (0 open, 1 close);
+`obs/extra/policy_phase` gives the step (`start, approach, descend, grasp, lift, hold`). If the
+gripper is not holding the block after the lift (width below `--min-width`, 3 mm), the row is
+saved with `clean_success: false` and the batch stops. Put the block back, or re-run
+`--set-pose` if the spot moved. Flags: `--approach`, `--lift`, `--hold` (m, m, s), `--jitter`
+(random x/y offset of the approach point, m), `--dynamics` (0.1), `--grasp-force`,
+`--gripper-speed`, `--allow-missing`, plus the camera flags of `data.py record`. The block must
+fit between the fingers (Franka Hand opens to 8 cm).
 
 ## Waypoint recorder
 
