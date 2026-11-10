@@ -26,20 +26,27 @@ def view(serial="111", depth_value=1000):
 
 class DashboardTests(unittest.TestCase):
     def test_multiple_camera_layout_rgb_order_and_invalid_depth(self):
-        canvas = cameras.live_dashboard([view(depth_value=0), view("222"), view("333")])
-        self.assertEqual(canvas.shape, (694, 1328, 3))
+        views = [view(depth_value=0), view("222"), view("333")]
+        canvas = cameras.live_dashboard(views)
+        layout = cameras.dashboard_layout(len(views))
+        self.assertEqual(canvas.shape, (layout["banner_h"] + 2 * layout["tile_h"], 1328, 3))
         self.assertEqual(canvas.dtype, np.uint8)
+        self.assertGreater(layout["banner_h"], 54)
+        self.assertIn("Q or Esc", " ".join(layout["lines"]))
+        self.assertGreater(int(canvas[:layout["banner_h"]].max()), 100)
+        y = layout["banner_h"] + 72 + 120
         # OpenCV output must be BGR, even though camera input is RGB.
-        np.testing.assert_array_equal(canvas[54+72+120, 8+160], [0, 0, 255])
-        np.testing.assert_array_equal(canvas[54+72+120, 16+320+160], [0, 0, 0])
-        self.assertTrue(np.any(canvas[54+72+120, 664+16+320+160]))
+        np.testing.assert_array_equal(canvas[y, 8+160], [0, 0, 255])
+        np.testing.assert_array_equal(canvas[y, 16+320+160], [0, 0, 0])
+        self.assertTrue(np.any(canvas[y, 664+16+320+160]))
 
     def test_waiting_and_failed_cameras_still_have_tiles(self):
         waiting = dict(serial="111", name="camera", frame=None, now=time.monotonic())
         failed = view("222")
         failed["error"] = "camera disconnected"
         canvas = cameras.live_dashboard([waiting, failed])
-        self.assertEqual(canvas.shape, (374, 1328, 3))
+        layout = cameras.dashboard_layout(2)
+        self.assertEqual(canvas.shape, (layout["banner_h"] + layout["tile_h"], 1328, 3))
 
 
 class ViewerTests(unittest.TestCase):

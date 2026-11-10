@@ -23,9 +23,9 @@ age of the newest frame, and the percent of pixels with a depth value. STALE mea
 that frame is older than 1 s. OFFLINE means the camera thread stopped. Startup can
 sit for tens of seconds while the USB reset and auto white balance settle; still
 waiting after 90 s means use a USB 3 port and retry with --reset or --fps 15.
-The same notes print in the terminal when the window opens. The viewer needs a
-graphical session (DISPLAY or WAYLAND_DISPLAY) and OpenCV with a GUI
-(opencv-python).
+The live window draws these notes across the top for the whole session, and the
+terminal prints them when the window opens. The viewer needs a graphical session
+(DISPLAY or WAYLAND_DISPLAY) and OpenCV with a GUI (opencv-python).
 
 Use the snapshots to aim the exocentric camera and check the wrist mount, and pass the serial
 numbers printed before the window to kinesthetic.py replay (--wrist-serial, --exo-serial).
@@ -220,22 +220,54 @@ def save_png(path, image):
         cv2.imwrite(str(path), image[..., ::-1] if image.ndim == 3 else image)
 
 
-def live_viewer_instructions(depth_max_m):
-    """Cheat sheet printed when --live opens. Keep in step with the module docstring."""
-    return (
-        "Live RGB-D viewer.\n"
-        "Click the window so keys reach it:\n"
-        "  Q or Esc    quit, including while cameras are still starting\n"
-        "  F           toggle fullscreen (the window opens fullscreen)\n"
-        "  close the window, or Ctrl-C, also quits\n"
-        "Each tile is one camera: RGB on the left, depth aligned to colour on the right.\n"
-        f"Depth: near = red, far = purple, no return = black. Scale is 0-{depth_max_m:g} m "
-        "(--depth-max).\n"
-        "Status line: fps, frame number, age of the newest frame, percent of pixels with depth.\n"
-        "STALE means that frame is older than 1 s. OFFLINE means the camera thread stopped.\n"
-        "Starting cameras can take tens of seconds (USB reset and white balance). "
-        "Still waiting after 90 s: use a USB 3 port, then --reset or --fps 15."
-    )
+def live_instruction_lines(n_cameras, depth_max_m):
+    """Cheat sheet drawn on the live window and printed when it opens."""
+    label = "camera" if n_cameras == 1 else "cameras"
+    return [
+        f"RealSense live RGB-D | {n_cameras} {label}",
+        "Click this window. Q or Esc: quit, also while cameras start. F: fullscreen.",
+        "Close the window or Ctrl-C: quit.",
+        "Each tile: RGB on the left, depth aligned to colour on the right.",
+        f"Depth: near = red, far = purple, no return = black. Scale 0-{depth_max_m:g} m.",
+        "Status: fps, frame number, frame age, percent of pixels with depth.",
+        "STALE = newest frame older than 1 s. OFFLINE = camera thread stopped.",
+        "Startup can take tens of seconds. After 90 s: USB 3 port, then --reset or --fps 15.",
+    ]
+
+
+def _wrap_text(text, max_width):
+    import cv2
+
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        trial = word if not current else f"{current} {word}"
+        width = cv2.getTextSize(trial, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0][0]
+        if current and width > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    return lines or [text]
+
+
+def dashboard_layout(n_views, far_mm=2000):
+    """Tile grid plus the wrapped instruction banner drawn above it."""
+    import cv2
+
+    preview_w, preview_h, gap = 320, 240, 8
+    tile_w, tile_h = 2 * preview_w + 3 * gap, 320
+    columns = min(3, math.ceil(math.sqrt(n_views)))
+    rows = math.ceil(n_views / columns)
+    lines = []
+    for line in live_instruction_lines(n_views, far_mm / 1000):
+        lines.extend(_wrap_text(line, columns * tile_w - 24))
+    (_, text_h), baseline = cv2.getTextSize("Ag", cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    step = text_h + baseline + 8
+    pad = 14
+    return {"preview_w": preview_w, "preview_h": preview_h, "gap": gap, "tile_w": tile_w,
+            "tile_h": tile_h, "columns": columns, "rows": rows, "lines": lines, "step": step,
+            "text_h": text_h, "pad": pad, "banner_h": pad + len(lines) * step + 8}
 
 
 def depth_preview(depth_mm, far_mm=2000):
@@ -246,20 +278,23 @@ def depth_preview(depth_mm, far_mm=2000):
 
 
 def live_dashboard(views, far_mm=2000):
-    """Render one RGB/depth tile per camera as an OpenCV BGR dashboard."""
+    """Render the runtime cheat sheet plus one RGB/depth tile per camera."""
     import cv2
 
     if not views:
         raise ValueError("the live dashboard needs at least one camera")
-    preview_w, preview_h, gap = 320, 240, 8
-    tile_w, tile_h, banner_h = 2 * preview_w + 3 * gap, 320, 54
-    columns = min(3, math.ceil(math.sqrt(len(views))))
-    rows = math.ceil(len(views) / columns)
+    layout = dashboard_layout(len(views), far_mm)
+    preview_w, preview_h, gap = layout["preview_w"], layout["preview_h"], layout["gap"]
+    tile_w, tile_h, banner_h = layout["tile_w"], layout["tile_h"], layout["banner_h"]
+    columns, rows = layout["columns"], layout["rows"]
     canvas = np.full((banner_h + rows * tile_h, columns * tile_w, 3), 22, dtype=np.uint8)
-    cv2.putText(canvas, f"RealSense RGB-D | {len(views)} cameras | Q/Esc: quit | F: fullscreen",
-                (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
-    cv2.putText(canvas, f"Depth: near = red, far = purple; scale 0-{far_mm / 1000:g} m; invalid = black",
-                (12, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (170, 170, 170), 1, cv2.LINE_AA)
+    canvas[:banner_h] = 32
+    baseline = layout["pad"] + layout["text_h"]
+    for index, line in enumerate(layout["lines"]):
+        cv2.putText(canvas, line, (12, baseline + index * layout["step"]),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (235, 235, 235) if index == 0 else (190, 190, 190), 1, cv2.LINE_AA)
+    cv2.line(canvas, (0, banner_h - 1), (canvas.shape[1] - 1, banner_h - 1), (70, 70, 70), 1)
 
     def preview(image):
         height, width = image.shape[:2]
@@ -356,7 +391,7 @@ def live_view(devices, args):
         fullscreen = True
         cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         histories = [deque(maxlen=60) for _ in devices]
-        print(live_viewer_instructions(args.depth_max), flush=True)
+        print("\n".join(live_instruction_lines(len(devices), args.depth_max)), flush=True)
         started = time.monotonic()
         startup.start()
         while True:
