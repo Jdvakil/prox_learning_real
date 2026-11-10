@@ -334,6 +334,16 @@ coefficients, and `real/control/{t,q_ref,dq_ref}` for every reference actually s
 `actions/joint_pos` and `real/target_q` contain the corresponding 15 Hz references. No action
 time shift is applied here; account for any shift performed by the training loader.
 
+Audit a finished batch (no hardware; about 2 minutes for 20 episodes):
+
+```bash
+python data.py analyze                                              # recordings/act_test_20 -> act_20_analysis/
+python data.py analyze recordings/<batch> --out <analysis dir>
+```
+
+It writes per-episode, joint, camera and sensor statistics (CSV, `metrics.json`), PCA of the
+motion, 12 plots (PNG + PDF), `report.txt` and an `index.html` gallery.
+
 ### Evaluate the trained ACT policy on the real arm
 
 `python model.py eval act` loads `models/act_test_20/policy_best.ckpt`, portable `dataset_stats.npz`,
@@ -633,6 +643,10 @@ robot. To deploy a newly trained ACT model, run `python model.py export act --so
 --data-dir <converted dataset> --destination models/<name>` in the training environment (or
 `--image-height` / `--image-width` instead of `--data-dir`) and copy the whole model folder;
 `--ckpt-dir models/<name>` selects it at evaluation.
+
+First motion after setup: `python utils.py robot-test` moves the end effector 20 cm along its
+own x axis at 5% of the velocity / acceleration / jerk limits (`--distance`, `--host`). Clear
+the space in front of the hand first.
 
 ## Sensors
 
