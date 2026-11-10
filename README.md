@@ -168,10 +168,20 @@ so stdout can still be redirected to your evaluation log. To reset before evalua
 ```bash
 python cameras.py                                    # serials + one colour/depth snapshot each -> camera_check/
 python cameras.py --reset                            # same, USB power-cycle first (if "no frames" / stalled)
+python cameras.py --live                             # live RGB + aligned-depth dashboard for all connected cameras
+python cameras.py --live --reset --depth-max 2        # reset first; depth display scale 0–2 m
 python kinesthetic.py teach --home-gripper           # -> demos/<utc stamp>.h5
 python kinesthetic.py replay demos/*.h5 --wrist-serial <serial> --exo-serial <serial>
                                                      # -> dataset/rows/<utc stamp>_<demo>_r0/
 ```
+
+The live camera dashboard opens every RealSense connected at startup concurrently. Each
+tile shows RGB, aligned depth, serial/product name, measured frame rate, frame age and
+valid-depth percentage. Invalid depth is black; near returns are red and far returns are
+purple. Resize the window as needed; quit with `q`, Escape, the window close button, or
+Ctrl-C. Use `--width`, `--height` and `--fps` to lower USB bandwidth when needed. Live mode
+requires a desktop session and OpenCV GUI support (`opencv-python`); it does not write
+snapshot files. Running without `--live` retains the existing per-camera snapshot check.
 
 **teach**: the arm runs franky's joint impedance tracker with zero stiffness and zero damping, so
 it floats under the robot's gravity compensation and you move it by hand. Keys in the terminal:

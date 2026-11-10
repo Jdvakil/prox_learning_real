@@ -6,6 +6,8 @@ timestamp and arrival time (the 15 Hz logger in kinesthetic.py samples that newe
 
     python cameras.py                  # list connected cameras, save one colour + depth snapshot each
     python cameras.py --out camera_check
+    python cameras.py --live           # all connected cameras: live RGB + aligned depth dashboard
+    python cameras.py --live --reset   # power-cycle cameras before viewing
 
 Use the snapshots to aim the exocentric camera and check the wrist mount, and pass the serial
 numbers to kinesthetic.py replay (--wrist-serial, --exo-serial).
@@ -14,6 +16,10 @@ Needs pyrealsense2 (pip install pyrealsense2).
 """
 
 import argparse
+from collections import deque
+import math
+import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -203,6 +209,126 @@ def depth_preview(depth_mm, far_mm=2000):
     return out.astype(np.uint8)
 
 
+def live_dashboard(views, far_mm=2000):
+    """Render one RGB/depth tile per camera as an OpenCV BGR dashboard."""
+    import cv2
+
+    if not views:
+        raise ValueError("the live dashboard needs at least one camera")
+    preview_w, preview_h, gap = 320, 240, 8
+    tile_w, tile_h, banner_h = 2 * preview_w + 3 * gap, 320, 54
+    columns = min(3, math.ceil(math.sqrt(len(views))))
+    rows = math.ceil(len(views) / columns)
+    canvas = np.full((banner_h + rows * tile_h, columns * tile_w, 3), 22, dtype=np.uint8)
+    cv2.putText(canvas, f"RealSense live RGB-D | {len(views)} cameras | Q / Esc: quit",
+                (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
+    cv2.putText(canvas, f"Depth: near = red, far = purple; scale 0-{far_mm / 1000:g} m; invalid = black",
+                (12, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (170, 170, 170), 1, cv2.LINE_AA)
+
+    def preview(image):
+        height, width = image.shape[:2]
+        scale = min(preview_w / width, preview_h / height)
+        width, height = max(1, round(width * scale)), max(1, round(height * scale))
+        result = np.zeros((preview_h, preview_w, 3), dtype=np.uint8)
+        x, y = (preview_w - width) // 2, (preview_h - height) // 2
+        result[y:y + height, x:x + width] = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        return result
+
+    for index, view in enumerate(views):
+        x = (index % columns) * tile_w
+        y = banner_h + (index // columns) * tile_h
+        tile = canvas[y:y + tile_h, x:x + tile_w]
+        cv2.putText(tile, f"{index + 1}. {view['serial']} | {view['name']}"[:85],
+                    (gap, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (230, 230, 230), 1, cv2.LINE_AA)
+        frame = view.get("frame")
+        error = view.get("error")
+        if frame is None:
+            status = error or "Waiting for frames..."
+        else:
+            rgb, depth, number, _, arrived = frame
+            color = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            depth_color = cv2.applyColorMap(depth_preview(depth, far_mm), cv2.COLORMAP_TURBO)
+            depth_color[depth == 0] = 0
+            tile[72:72 + preview_h, gap:gap + preview_w] = preview(color)
+            tile[72:72 + preview_h, 2 * gap + preview_w:2 * gap + 2 * preview_w] = preview(depth_color)
+            age_ms = max(0, view["now"] - arrived) * 1000
+            fps = view.get("fps")
+            rate = f"{fps:.1f} fps" if fps is not None else "measuring fps"
+            status = (f"{rate} | frame {number} | age {age_ms:.0f} ms | "
+                      f"depth valid {100 * np.mean(depth > 0):.1f}%")
+            if error:
+                status = "OFFLINE: " + error
+            elif age_ms > 1000:
+                status = "STALE: " + status
+        cv2.putText(tile, status[:100], (gap, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
+                    (70, 100, 255) if error or status.startswith("STALE") else (100, 220, 150), 1, cv2.LINE_AA)
+        cv2.putText(tile, "RGB", (gap, 63), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (190, 190, 190), 1, cv2.LINE_AA)
+        cv2.putText(tile, "Aligned depth", (2 * gap + preview_w, 63),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.43, (190, 190, 190), 1, cv2.LINE_AA)
+    return canvas
+
+
+def live_view(devices, args):
+    """Open all devices concurrently and display their latest RGB-D frames."""
+    import cv2
+
+    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        raise SystemExit("--live needs a desktop display; run it in the lab PC's graphical session")
+    window = "RealSense live RGB-D"
+    cameras = []
+    opened = False
+    try:
+        try:
+            cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+            opened = True
+        except cv2.error as exc:
+            raise SystemExit("--live needs OpenCV GUI support (opencv-python) and a desktop display") from exc
+        views = [dict(serial=serial, name=name, frame=None, error=None, now=time.monotonic())
+                 for serial, name in devices]
+        initial = live_dashboard(views, args.depth_max * 1000)
+        scale = min(1, 1600 / initial.shape[1], 900 / initial.shape[0])
+        cv2.resizeWindow(window, round(initial.shape[1] * scale), round(initial.shape[0] * scale))
+        cv2.imshow(window, initial)
+        cv2.waitKey(1)
+        cameras = start_cameras([(serial, serial) for serial, _ in devices],
+                                args.width, args.height, args.fps, reset=args.reset)
+        histories = [deque(maxlen=60) for _ in cameras]
+        print("Live RGB-D dashboard: Q, Esc, window close, or Ctrl-C to quit.")
+        while True:
+            now = time.monotonic()
+            for cam, view, history in zip(cameras, views, histories):
+                view["now"] = now
+                try:
+                    frame, count = cam.latest()
+                    view["frame"], view["error"] = frame, None
+                    if frame is not None and (not history or history[-1][1] != count):
+                        history.append((frame[4], count))
+                    if len(history) > 1:
+                        elapsed = history[-1][0] - history[0][0]
+                        view["fps"] = (history[-1][1] - history[0][1]) / elapsed if elapsed > 0 else None
+                except RuntimeError as exc:
+                    view["error"] = str(exc)
+            cv2.imshow(window, live_dashboard(views, args.depth_max * 1000))
+            key = cv2.waitKey(20) & 0xff
+            if key in (27, ord("q"), ord("Q")):
+                break
+            try:
+                if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                    break
+            except cv2.error:  # Window was closed by the desktop window manager.
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for cam in cameras:
+            cam.close()
+        if opened:
+            try:
+                cv2.destroyWindow(window)
+            except cv2.error:
+                pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=Path("camera_check"))
@@ -210,19 +336,27 @@ def main():
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--reset", action="store_true", help="USB power-cycle every camera first")
+    parser.add_argument("--live", action="store_true", help="show all connected cameras in one live RGB-D dashboard")
+    parser.add_argument("--depth-max", type=float, default=2.0, help="live depth color scale far distance in meters (default 2)")
     args = parser.parse_args()
+    if not np.isfinite(args.depth_max) or args.depth_max <= 0:
+        parser.error("--depth-max must be positive and finite")
     devices = connected()
     if not devices:
         raise SystemExit("no RealSense camera found")
-    if args.reset:
+    if args.reset and not args.live:
         hardware_reset([s for s, _ in devices])
-    args.out.mkdir(parents=True, exist_ok=True)
     for serial, name in devices:
         usb = usb_type(serial)
         print(f"{serial}  {name}  USB {usb}")
         if usb.startswith("2"):
             print(f"  warning: {serial} on USB {usb}; colour+depth at {args.width}x{args.height}@{args.fps} "
                   "may not stream (use a USB 3 port/cable, or e.g. --fps 15 / --width 424 --height 240)")
+    if args.live:
+        live_view(devices, args)
+        return
+    args.out.mkdir(parents=True, exist_ok=True)
+    for serial, name in devices:
         cam = RealSenseCamera(serial, serial, args.width, args.height, args.fps)
         cam.start()
         try:
