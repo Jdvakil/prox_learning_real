@@ -9,12 +9,14 @@ timestamp and arrival time (the 15 Hz logger in kinesthetic.py samples that newe
     python cameras.py --live           # all connected cameras: live RGB + aligned depth dashboard
     python cameras.py --live --reset   # power-cycle cameras before viewing
     python cameras.py --live --depth-max 1.5 --fps 15
+    python cameras.py --live --record              # same view, saved as camera_view.mp4
+    python cameras.py --live --record take.mp4     # same view, chosen path
 
 While --live is open, click the window so keys reach it:
 
     Q or Esc                 quit, including during the "Starting cameras" wait
     F                        toggle fullscreen (the window opens fullscreen)
-    close the window, Ctrl-C quit
+    close the window, Ctrl-C quit, and finish an mp4 opened with --record
 
 Each tile is one camera: colour on the left, depth aligned to colour on the right.
 Depth runs near = red to far = purple over 0 to --depth-max metres (default 2);
@@ -24,8 +26,11 @@ that frame is older than 1 s. OFFLINE means the camera thread stopped. Startup c
 sit for tens of seconds while the USB reset and auto white balance settle; still
 waiting after 90 s means use a USB 3 port and retry with --reset or --fps 15.
 The live window draws these notes across the top for the whole session, and the
-terminal prints them when the window opens. The viewer needs a graphical session
-(DISPLAY or WAYLAND_DISPLAY) and OpenCV with a GUI (opencv-python).
+terminal prints them when the window opens. --record (only with --live) writes
+that same dashboard to an mp4 at --fps (default camera_view.mp4). Quit, closing
+the window, or Ctrl-C finalizes the file. The viewer needs a graphical session
+(DISPLAY or WAYLAND_DISPLAY) and OpenCV with a GUI (opencv-python). The mp4
+uses the mp4v codec.
 
 Use the snapshots to aim the exocentric camera and check the wrist mount, and pass the serial
 numbers printed before the window to kinesthetic.py replay (--wrist-serial, --exo-serial).
@@ -220,10 +225,10 @@ def save_png(path, image):
         cv2.imwrite(str(path), image[..., ::-1] if image.ndim == 3 else image)
 
 
-def live_instruction_lines(n_cameras, depth_max_m):
+def live_instruction_lines(n_cameras, depth_max_m, record_path=None):
     """Cheat sheet drawn on the live window and printed when it opens."""
     label = "camera" if n_cameras == 1 else "cameras"
-    return [
+    lines = [
         f"RealSense live RGB-D | {n_cameras} {label}",
         "Click this window. Q or Esc: quit, also while cameras start. F: fullscreen.",
         "Close the window or Ctrl-C: quit.",
@@ -233,6 +238,9 @@ def live_instruction_lines(n_cameras, depth_max_m):
         "STALE = newest frame older than 1 s. OFFLINE = camera thread stopped.",
         "Startup can take tens of seconds. After 90 s: USB 3 port, then --reset or --fps 15.",
     ]
+    if record_path is not None:
+        lines.append(f"Recording this view to {record_path}. Quit closes the mp4.")
+    return lines
 
 
 def _wrap_text(text, max_width):
@@ -251,7 +259,7 @@ def _wrap_text(text, max_width):
     return lines or [text]
 
 
-def dashboard_layout(n_views, far_mm=2000):
+def dashboard_layout(n_views, far_mm=2000, record_path=None):
     """Tile grid plus the wrapped instruction banner drawn above it."""
     import cv2
 
@@ -260,7 +268,7 @@ def dashboard_layout(n_views, far_mm=2000):
     columns = min(3, math.ceil(math.sqrt(n_views)))
     rows = math.ceil(n_views / columns)
     lines = []
-    for line in live_instruction_lines(n_views, far_mm / 1000):
+    for line in live_instruction_lines(n_views, far_mm / 1000, record_path):
         lines.extend(_wrap_text(line, columns * tile_w - 24))
     (_, text_h), baseline = cv2.getTextSize("Ag", cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
     step = text_h + baseline + 8
@@ -277,13 +285,54 @@ def depth_preview(depth_mm, far_mm=2000):
     return out.astype(np.uint8)
 
 
-def live_dashboard(views, far_mm=2000):
+class DashboardRecorder:
+    """Write the on-screen dashboard to an mp4. Call close() so the file is playable."""
+
+    def __init__(self, path, fps):
+        self.path = Path(path)
+        self.fps = float(fps)
+        self.writer = None
+        self.size = None
+        self.frames = 0
+
+    def write(self, canvas):
+        import cv2
+
+        frame = np.ascontiguousarray(canvas)
+        height, width = frame.shape[:2]
+        if width % 2 or height % 2:
+            frame = cv2.copyMakeBorder(frame, 0, height % 2, 0, width % 2,
+                                        cv2.BORDER_CONSTANT, value=(32, 32, 32))
+        if self.writer is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            self.size = (frame.shape[1], frame.shape[0])
+            self.writer = cv2.VideoWriter(str(self.path), fourcc, self.fps, self.size)
+            if not self.writer.isOpened():
+                self.writer.release()
+                self.writer = None
+                raise SystemExit(f"cannot write {self.path}; OpenCV has no mp4v encoder")
+            print(f"recording {self.size[0]}x{self.size[1]} at {self.fps:g} fps -> {self.path}", flush=True)
+        elif (frame.shape[1], frame.shape[0]) != self.size:
+            frame = cv2.resize(frame, self.size)
+        self.writer.write(frame)
+        self.frames += 1
+
+    def close(self):
+        if self.writer is not None:
+            self.writer.release()
+            self.writer = None
+        if self.frames:
+            print(f"saved {self.frames} frames -> {self.path}", flush=True)
+
+
+def live_dashboard(views, far_mm=2000, record_path=None):
     """Render the runtime cheat sheet plus one RGB/depth tile per camera."""
     import cv2
 
     if not views:
         raise ValueError("the live dashboard needs at least one camera")
-    layout = dashboard_layout(len(views), far_mm)
+    layout = dashboard_layout(len(views), far_mm, record_path)
     preview_w, preview_h, gap = layout["preview_w"], layout["preview_h"], layout["gap"]
     tile_w, tile_h, banner_h = layout["tile_w"], layout["tile_h"], layout["banner_h"]
     columns, rows = layout["columns"], layout["rows"]
@@ -378,6 +427,7 @@ def live_view(devices, args):
     window = "RealSense live RGB-D"
     startup = LiveCameraStartup(devices, args)
     opened = False
+    recorder = None
     try:
         try:
             cv2.namedWindow(window, cv2.WINDOW_NORMAL)
@@ -386,12 +436,18 @@ def live_view(devices, args):
             raise SystemExit("--live needs OpenCV GUI support (opencv-python) and a desktop display") from exc
         views = [dict(serial=serial, name=name, frame=None, error=None, now=time.monotonic())
                  for serial, name in devices]
-        initial = live_dashboard(views, args.depth_max * 1000)
+        record_path = getattr(args, "record", None)
+        recorder = DashboardRecorder(record_path, args.fps) if record_path is not None else None
+        period = 1.0 / args.fps if recorder is not None else None
+        initial = live_dashboard(views, args.depth_max * 1000, record_path)
         cv2.imshow(window, initial)
+        if recorder is not None:
+            recorder.write(initial)
+            next_record = time.monotonic() + period
         fullscreen = True
         cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         histories = [deque(maxlen=60) for _ in devices]
-        print("\n".join(live_instruction_lines(len(devices), args.depth_max)), flush=True)
+        print("\n".join(live_instruction_lines(len(devices), args.depth_max, record_path)), flush=True)
         started = time.monotonic()
         startup.start()
         while True:
@@ -416,7 +472,11 @@ def live_view(devices, args):
                         view["fps"] = (history[-1][1] - history[0][1]) / elapsed if elapsed > 0 else None
                 except RuntimeError as exc:
                     view["error"] = str(exc)
-            cv2.imshow(window, live_dashboard(views, args.depth_max * 1000))
+            canvas = live_dashboard(views, args.depth_max * 1000, record_path)
+            cv2.imshow(window, canvas)
+            if recorder is not None and now >= next_record:
+                recorder.write(canvas)
+                next_record = now + period
             key = cv2.waitKey(20) & 0xff
             if key in (27, ord("q"), ord("Q")):
                 break
@@ -432,6 +492,8 @@ def live_view(devices, args):
     except KeyboardInterrupt:
         pass
     finally:
+        if recorder is not None:
+            recorder.close()
         startup.stop_event.set()
         if opened:
             try:
@@ -452,8 +514,14 @@ def main():
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--reset", action="store_true", help="USB power-cycle every camera first")
     parser.add_argument("--live", action="store_true", help="show all connected cameras in one live RGB-D dashboard")
+    parser.add_argument("--record", nargs="?", const=Path("camera_view.mp4"), default=None, type=Path,
+                        help="with --live, save that dashboard view to this mp4 (default camera_view.mp4)")
     parser.add_argument("--depth-max", type=float, default=2.0, help="live depth color scale far distance in meters (default 2)")
     args = parser.parse_args()
+    if args.record is not None and not args.live:
+        parser.error("--record saves the live dashboard; also pass --live")
+    if args.record is not None and args.fps <= 0:
+        parser.error("--record needs a positive --fps")
     if not np.isfinite(args.depth_max) or args.depth_max <= 0:
         parser.error("--depth-max must be positive and finite")
     devices = connected()

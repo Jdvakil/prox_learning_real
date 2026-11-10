@@ -51,7 +51,7 @@ class DashboardTests(unittest.TestCase):
 
 class ViewerTests(unittest.TestCase):
     def args(self):
-        return SimpleNamespace(width=640, height=480, fps=30, reset=True, depth_max=2.)
+        return SimpleNamespace(width=640, height=480, fps=30, reset=True, depth_max=2., record=None)
 
     def gui(self, stack, keys):
         stack.enter_context(patch.dict(os.environ, {"DISPLAY": ":test"}))
@@ -150,7 +150,74 @@ class ViewerTests(unittest.TestCase):
             self.assertFalse(out.exists())
             reset.assert_not_called()
             self.assertTrue(live.call_args.args[1].reset)
+            self.assertIsNone(live.call_args.args[1].record)
             self.assertEqual(len(live.call_args.args[0]), 2)
+
+    def test_record_flag_reaches_live_view(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "take.mp4"
+            with patch.object(sys, "argv", ["cameras.py", "--live", "--record", str(path)]),\
+                 patch.object(cameras, "connected", return_value=[("111", "D435")]),\
+                 patch.object(cameras, "usb_type", return_value="3.2"),\
+                 patch.object(cameras, "live_view") as live:
+                cameras.main()
+            self.assertEqual(live.call_args.args[1].record, path)
+
+    def test_record_alone_is_rejected(self):
+        with patch.object(sys, "argv", ["cameras.py", "--record", "take.mp4"]),\
+             patch.object(cameras, "connected") as found:
+            with self.assertRaises(SystemExit):
+                cameras.main()
+        found.assert_not_called()
+
+    def test_record_writes_the_dashboard_and_closes_the_file(self):
+        written = []
+        released = []
+
+        class FakeWriter:
+            def __init__(self, filename, fourcc, fps, size):
+                self.filename, self.fps, self.size = filename, fps, size
+            def isOpened(self):
+                return True
+            def write(self, frame):
+                written.append((frame.shape[1], frame.shape[0]))
+            def release(self):
+                released.append(True)
+
+        args = self.args()
+        args.record = Path("take.mp4")
+        args.fps = 10**6
+        frame = view()["frame"]
+        cam = SimpleNamespace(latest=Mock(return_value=(frame, 1)), close=Mock())
+        with ExitStack() as stack:
+            self.gui(stack, [-1, ord("q")])
+            stack.enter_context(patch.object(cv2, "VideoWriter", FakeWriter))
+            stack.enter_context(patch.object(cameras, "start_cameras", return_value=[cam]))
+            cameras.live_view([("111", "D435")], args)
+        self.assertGreaterEqual(len(written), 1)
+        self.assertTrue(all(shape == written[0] for shape in written))
+        self.assertEqual(released, [True])
+        cam.close.assert_called_once()
+
+    def test_recorder_pads_odd_frames_and_writes_a_readable_mp4(self):
+        canvas = np.zeros((15, 15, 3), np.uint8)
+        canvas[0, 0] = (0, 0, 255)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "nested" / "view.mp4"
+            recorder = cameras.DashboardRecorder(path, 10)
+            try:
+                recorder.write(canvas)
+                recorder.write(canvas)
+            finally:
+                recorder.close()
+            self.assertEqual(recorder.frames, 2)
+            capture = cv2.VideoCapture(str(path))
+            self.assertTrue(capture.isOpened())
+            ok, frame = capture.read()
+            ok2, _ = capture.read()
+            capture.release()
+        self.assertTrue(ok and ok2)
+        self.assertEqual(frame.shape[:2], (16, 16))
 
 
 if __name__ == "__main__":
