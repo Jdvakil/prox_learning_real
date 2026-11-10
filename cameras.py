@@ -8,9 +8,27 @@ timestamp and arrival time (the 15 Hz logger in kinesthetic.py samples that newe
     python cameras.py --out camera_check
     python cameras.py --live           # all connected cameras: live RGB + aligned depth dashboard
     python cameras.py --live --reset   # power-cycle cameras before viewing
+    python cameras.py --live --depth-max 1.5 --fps 15
+
+While --live is open, click the window so keys reach it:
+
+    Q or Esc                 quit, including during the "Starting cameras" wait
+    F                        toggle fullscreen (the window opens fullscreen)
+    close the window, Ctrl-C quit
+
+Each tile is one camera: colour on the left, depth aligned to colour on the right.
+Depth runs near = red to far = purple over 0 to --depth-max metres (default 2);
+pixels with no return stay black. The status line is measured fps, frame number,
+age of the newest frame, and the percent of pixels with a depth value. STALE means
+that frame is older than 1 s. OFFLINE means the camera thread stopped. Startup can
+sit for tens of seconds while the USB reset and auto white balance settle; still
+waiting after 90 s means use a USB 3 port and retry with --reset or --fps 15.
+The same notes print in the terminal when the window opens. The viewer needs a
+graphical session (DISPLAY or WAYLAND_DISPLAY) and OpenCV with a GUI
+(opencv-python).
 
 Use the snapshots to aim the exocentric camera and check the wrist mount, and pass the serial
-numbers to kinesthetic.py replay (--wrist-serial, --exo-serial).
+numbers printed before the window to kinesthetic.py replay (--wrist-serial, --exo-serial).
 
 Needs pyrealsense2 (pip install pyrealsense2).
 """
@@ -169,7 +187,7 @@ def start_cameras(specs, width=640, height=480, fps=30, reset=True, settle=3.0):
     serials = [serial for _, serial in specs]
     for attempt in (0, 1):
         if reset or attempt:
-            print(f"resetting cameras {', '.join(serials)}")
+            print(f"resetting cameras {', '.join(serials)}", flush=True)
             hardware_reset(serials)
         cams = []
         try:
@@ -188,7 +206,7 @@ def start_cameras(specs, width=640, height=480, fps=30, reset=True, settle=3.0):
                 cam.close()
             if attempt or not isinstance(exc, Exception):
                 raise
-            print(f"cameras did not stream ({exc}); resetting and retrying once")
+            print(f"cameras did not stream ({exc}); resetting and retrying once", flush=True)
 
 
 def save_png(path, image):
@@ -200,6 +218,24 @@ def save_png(path, image):
         import cv2
 
         cv2.imwrite(str(path), image[..., ::-1] if image.ndim == 3 else image)
+
+
+def live_viewer_instructions(depth_max_m):
+    """Cheat sheet printed when --live opens. Keep in step with the module docstring."""
+    return (
+        "Live RGB-D viewer.\n"
+        "Click the window so keys reach it:\n"
+        "  Q or Esc    quit, including while cameras are still starting\n"
+        "  F           toggle fullscreen (the window opens fullscreen)\n"
+        "  close the window, or Ctrl-C, also quits\n"
+        "Each tile is one camera: RGB on the left, depth aligned to colour on the right.\n"
+        f"Depth: near = red, far = purple, no return = black. Scale is 0-{depth_max_m:g} m "
+        "(--depth-max).\n"
+        "Status line: fps, frame number, age of the newest frame, percent of pixels with depth.\n"
+        "STALE means that frame is older than 1 s. OFFLINE means the camera thread stopped.\n"
+        "Starting cameras can take tens of seconds (USB reset and white balance). "
+        "Still waiting after 90 s: use a USB 3 port, then --reset or --fps 15."
+    )
 
 
 def depth_preview(depth_mm, far_mm=2000):
@@ -220,7 +256,7 @@ def live_dashboard(views, far_mm=2000):
     columns = min(3, math.ceil(math.sqrt(len(views))))
     rows = math.ceil(len(views) / columns)
     canvas = np.full((banner_h + rows * tile_h, columns * tile_w, 3), 22, dtype=np.uint8)
-    cv2.putText(canvas, f"RealSense live RGB-D | {len(views)} cameras | Q / Esc: quit",
+    cv2.putText(canvas, f"RealSense RGB-D | {len(views)} cameras | Q/Esc: quit | F: fullscreen",
                 (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
     cv2.putText(canvas, f"Depth: near = red, far = purple; scale 0-{far_mm / 1000:g} m; invalid = black",
                 (12, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (170, 170, 170), 1, cv2.LINE_AA)
@@ -243,7 +279,7 @@ def live_dashboard(views, far_mm=2000):
         frame = view.get("frame")
         error = view.get("error")
         if frame is None:
-            status = error or "Waiting for frames..."
+            status = error or view.get("status", "Waiting for frames...")
         else:
             rgb, depth, number, _, arrived = frame
             color = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
@@ -268,6 +304,36 @@ def live_dashboard(views, far_mm=2000):
     return canvas
 
 
+class LiveCameraStartup(threading.Thread):
+    """Own camera startup and cleanup without blocking the desktop event loop."""
+
+    def __init__(self, devices, args):
+        super().__init__(daemon=True)
+        self.devices, self.args = devices, args
+        self.ready = threading.Event()
+        self.stop_event = threading.Event()
+        self.cameras = []
+        self.error = None
+
+    def run(self):
+        cameras = []
+        try:
+            cameras = start_cameras([(serial, serial) for serial, _ in self.devices],
+                                    self.args.width, self.args.height, self.args.fps,
+                                    reset=self.args.reset)
+            self.cameras = cameras
+        except Exception as exc:
+            self.error = exc
+        finally:
+            self.ready.set()
+        try:
+            if self.error is None:
+                self.stop_event.wait()
+        finally:
+            for cam in cameras:
+                cam.close()
+
+
 def live_view(devices, args):
     """Open all devices concurrently and display their latest RGB-D frames."""
     import cv2
@@ -275,7 +341,7 @@ def live_view(devices, args):
     if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         raise SystemExit("--live needs a desktop display; run it in the lab PC's graphical session")
     window = "RealSense live RGB-D"
-    cameras = []
+    startup = LiveCameraStartup(devices, args)
     opened = False
     try:
         try:
@@ -286,16 +352,23 @@ def live_view(devices, args):
         views = [dict(serial=serial, name=name, frame=None, error=None, now=time.monotonic())
                  for serial, name in devices]
         initial = live_dashboard(views, args.depth_max * 1000)
-        scale = min(1, 1600 / initial.shape[1], 900 / initial.shape[0])
-        cv2.resizeWindow(window, round(initial.shape[1] * scale), round(initial.shape[0] * scale))
         cv2.imshow(window, initial)
-        cv2.waitKey(1)
-        cameras = start_cameras([(serial, serial) for serial, _ in devices],
-                                args.width, args.height, args.fps, reset=args.reset)
-        histories = [deque(maxlen=60) for _ in cameras]
-        print("Live RGB-D dashboard: Q, Esc, window close, or Ctrl-C to quit.")
+        fullscreen = True
+        cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        histories = [deque(maxlen=60) for _ in devices]
+        print(live_viewer_instructions(args.depth_max), flush=True)
+        started = time.monotonic()
+        startup.start()
         while True:
             now = time.monotonic()
+            if startup.ready.is_set() and startup.error is not None:
+                raise SystemExit(f"Live camera startup failed: {startup.error}")
+            if not startup.ready.is_set() and now - started > 90:
+                raise SystemExit("Live camera startup timed out after 90 s; check USB connections and try --reset or --fps 15")
+            cameras = startup.cameras if startup.ready.is_set() else []
+            if not cameras:
+                for view in views:
+                    view["status"] = f"Starting cameras: {now - started:.0f} s (USB reset/retry may take a while)"
             for cam, view, history in zip(cameras, views, histories):
                 view["now"] = now
                 try:
@@ -312,6 +385,10 @@ def live_view(devices, args):
             key = cv2.waitKey(20) & 0xff
             if key in (27, ord("q"), ord("Q")):
                 break
+            if key in (ord("f"), ord("F")):
+                fullscreen = not fullscreen
+                cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN,
+                                      cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL)
             try:
                 if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
                     break
@@ -320,13 +397,16 @@ def live_view(devices, args):
     except KeyboardInterrupt:
         pass
     finally:
-        for cam in cameras:
-            cam.close()
+        startup.stop_event.set()
         if opened:
             try:
                 cv2.destroyWindow(window)
             except cv2.error:
                 pass
+        if startup.ident is not None:
+            # A blocked USB call must not prevent the window/process from closing.
+            # The worker closes pipelines if startup finishes after cancellation.
+            startup.join(timeout=0.2)
 
 
 def main():

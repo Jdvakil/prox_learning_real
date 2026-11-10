@@ -178,8 +178,10 @@ python kinesthetic.py replay demos/*.h5 --wrist-serial <serial> --exo-serial <se
 The live camera dashboard opens every RealSense connected at startup concurrently. Each
 tile shows RGB, aligned depth, serial/product name, measured frame rate, frame age and
 valid-depth percentage. Invalid depth is black; near returns are red and far returns are
-purple. Resize the window as needed; quit with `q`, Escape, the window close button, or
-Ctrl-C. Use `--width`, `--height` and `--fps` to lower USB bandwidth when needed. Live mode
+purple. The dashboard opens full screen; press `f` to toggle a resizable window. Quit with
+`q`, Escape, the window close button, or Ctrl-C, including while cameras start or reset.
+Camera startup runs in the background and times out after 90 seconds. Use
+`--width`, `--height` and `--fps` to lower USB bandwidth when needed. Live mode
 requires a desktop session and OpenCV GUI support (`opencv-python`); it does not write
 snapshot files. Running without `--live` retains the existing per-camera snapshot check.
 

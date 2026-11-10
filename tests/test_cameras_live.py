@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 import unittest
@@ -47,8 +48,9 @@ class ViewerTests(unittest.TestCase):
 
     def gui(self, stack, keys):
         stack.enter_context(patch.dict(os.environ, {"DISPLAY": ":test"}))
-        for name in ["namedWindow", "resizeWindow", "imshow", "destroyWindow"]:
+        for name in ["namedWindow", "setWindowProperty", "imshow", "destroyWindow"]:
             stack.enter_context(patch.object(cv2, name))
+        stack.enter_context(patch.object(cv2, "getWindowProperty", return_value=1))
         stack.enter_context(patch.object(cv2, "waitKey", side_effect=keys))
 
     def test_all_cameras_open_together_and_close_on_quit(self):
@@ -63,6 +65,59 @@ class ViewerTests(unittest.TestCase):
         start.assert_called_once_with([("111", "111"), ("222", "222")], 640, 480, 30, reset=True)
         for cam in cams:
             cam.close.assert_called_once()
+
+    def test_fullscreen_by_default_and_toggle(self):
+        with ExitStack() as stack:
+            self.gui(stack, [ord("f"), ord("F"), ord("q")])
+            stack.enter_context(patch.object(cameras, "start_cameras", return_value=[]))
+            cameras.live_view([("111", "D435")], self.args())
+            self.assertEqual([call.args[2] for call in cv2.setWindowProperty.call_args_list],
+                             [cv2.WINDOW_FULLSCREEN, cv2.WINDOW_NORMAL, cv2.WINDOW_FULLSCREEN])
+
+    def test_can_quit_while_usb_startup_blocks_and_late_pipelines_close(self):
+        release = threading.Event()
+        entered = threading.Event()
+        cam = SimpleNamespace(close=Mock())
+        worker = cameras.LiveCameraStartup([("111", "D435")], self.args())
+
+        def blocked_start(*args, **kwargs):
+            entered.set()
+            release.wait(timeout=5)
+            return [cam]
+
+        def quit_during_startup(_delay):
+            self.assertTrue(entered.wait(timeout=1))
+            self.assertFalse(worker.ready.is_set())
+            return ord("q")
+
+        try:
+            with ExitStack() as stack:
+                self.gui(stack, quit_during_startup)
+                stack.enter_context(patch.object(cameras, "LiveCameraStartup", return_value=worker))
+                stack.enter_context(patch.object(cameras, "start_cameras", side_effect=blocked_start))
+                cameras.live_view([("111", "D435")], self.args())
+                cv2.destroyWindow.assert_called_once()
+                self.assertFalse(worker.ready.is_set())
+        finally:
+            release.set()
+            worker.join(timeout=1)
+        self.assertFalse(worker.is_alive())
+        cam.close.assert_called_once()
+
+    def test_startup_failure_is_reported_and_window_closes(self):
+        worker = cameras.LiveCameraStartup([("111", "D435")], self.args())
+
+        def wait_for_failure(_delay):
+            self.assertTrue(worker.ready.wait(timeout=1))
+            return -1
+
+        with ExitStack() as stack:
+            self.gui(stack, wait_for_failure)
+            stack.enter_context(patch.object(cameras, "LiveCameraStartup", return_value=worker))
+            stack.enter_context(patch.object(cameras, "start_cameras", side_effect=RuntimeError("USB failed")))
+            with self.assertRaisesRegex(SystemExit, "Live camera startup failed: USB failed"):
+                cameras.live_view([("111", "D435")], self.args())
+            cv2.destroyWindow.assert_called_once()
 
     def test_viewer_failure_closes_all_pipelines(self):
         frame = view()["frame"]
