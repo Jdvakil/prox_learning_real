@@ -1,0 +1,55 @@
+{
+  "set_pose": false,
+  "host": "172.16.0.2",
+  "episodes": 1,
+  "approach": 0.1,
+  "lift": 0.1,
+  "hold": 1.0,
+  "jitter": 0.0,
+  "seed": 0,
+  "dynamics": 0.1,
+  "grasp_force": 20.0,
+  "gripper_speed": 0.05,
+  "min_width": 0.003,
+  "lead": 1.0,
+  "control_cpu": null,
+  "warmup_timeout": 5.0,
+  "allow_missing": true,
+  "wrist_serial": "836612071883",
+  "exo_serial": "943222071556",
+  "camera": [],
+  "no_cameras": false,
+  "no_camera_reset": false,
+  "cam_width": 640,
+  "cam_height": 480,
+  "cam_fps": 30,
+  "no_depth": false,
+  "rgb_h5": false,
+  "output": null,
+  "grasp_pose": [
+    [
+      0.9933212690943725,
+      0.005235942519561554,
+      0.11526234205878086,
+      0.5415880150640525
+    ],
+    [
+      0.01278444775728943,
+      -0.9978132173360932,
+      -0.06484833937993902,
+      0.2102030235814559
+    ],
+    [
+      0.11467074618988299,
+      0.06588880016197687,
+      -0.9912160639249087,
+      0.0029275938655494854
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ]
+}
