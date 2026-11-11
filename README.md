@@ -263,23 +263,55 @@ No model and no vision: the arm goes to one fixed grasp pose that you show it on
 #    block; then FCI on, arm still:
 python data.py pick --set-pose                        # -> pick_pose.json, no motion
 
-# 2. Collect (the arm moves; clear the workspace):
+# 2. Check the trajectory without hardware (durations, peak speeds, end points):
+python data.py pick --plan-only
+#    and run it on a simulated arm + 5 cm block (desktop with the parent repo and mujoco):
+python data.py pick --sim --episodes 3               # -> recordings/pick_sim_<utc stamp>/
+
+# 3. Collect (the arm moves; clear the workspace):
 python data.py pick --episodes 10 --wrist-serial 836612071883 --exo-serial 943222071556
                                                       # -> recordings/pick_<utc stamp>/episode_0000/ ...
 ```
 
-Recorded per episode: start at HOME (`[0, 0, 0, -2.2, 0, 2.2, 0.7]`) with the gripper open,
-move 10 cm above the grasp pose, go down, close the gripper (20 N), lift 10 cm, hold 1 s. Not
-recorded: lower the block back onto its spot, open, back off, return HOME, so the next episode
-finds the block in the same place. Same row layout as the other recorders. Actions are the
-measured joints at the next 15 Hz tick plus the gripper command (0 open, 1 close);
-`obs/extra/policy_phase` gives the step (`start, approach, descend, grasp, lift, hold`). If the
-gripper is not holding the block after the lift (width below `--min-width`, 3 mm), the row is
-saved with `clean_success: false` and the batch stops. Put the block back, or re-run
-`--set-pose` if the spot moved. Flags: `--approach`, `--lift`, `--hold` (m, m, s), `--jitter`
-(random x/y offset of the approach point, m), `--dynamics` (0.1), `--grasp-force`,
-`--gripper-speed`, `--allow-missing`, plus the camera flags of `data.py record`. The block must
-fit between the fingers (Franka Hand opens to 8 cm).
+Each episode is one smooth joint trajectory streamed at 100 Hz to the joint impedance tracker
+(the controller `data.py waypoints` uses). Recorded: start at HOME (`[0, 0, 0, -2.2, 0, 2.2, 0.7]`)
+with the gripper open, a minimum-jerk joint move to 10 cm above the grasp pose, a straight
+vertical descent, close the gripper (20 N, arm held still meanwhile), a straight 10 cm lift, a
+1 s hold. Not recorded: lower the block back onto its spot (released `--place-gap`, 5 mm, above
+the grasp height so it is never pressed into the table), open, rise, return HOME, so the next
+episode finds the block in the same place. The straight lines use FR3 inverse kinematics seeded
+from the joint angles saved by `--set-pose` (the elbow stays as you posed it), with minimum-jerk
+timing, so every segment starts and ends at rest. All episodes are planned and checked (joint
+limits, joint speed) before the arm moves. With the defaults: 2.9 s approach, 3.8 s descent,
+3.8 s lift, peak 0.4 rad/s joint speed and 5 cm/s hand speed.
+
+2026-11-10: the first version used franky `CartesianMotion` and every run aborted at the end of
+the approach or descent with `cartesian_motion_generator_joint_velocity_discontinuity` (the
+elbow was free and drifted, joint 6 ended at 3.30 instead of the posed 2.84). Hence the joint
+trajectory.
+
+Same row layout as the other recorders. Actions are the joint reference sent to the tracker at
+each 15 Hz tick plus the gripper command (0 open, 1 close); `obs/extra/policy_phase` gives the step
+(`start, approach, descend, grasp, lift, hold`). If the gripper is not holding the block after the
+lift (width below `--min-width`, 3 mm), the row is saved with `clean_success: false`, the arm opens
+at the lifted pose, rises and goes home without going down to the block again, and the batch
+stops. libfranka's grasp reports success when the fingers close on nothing, so the width after
+the grasp decides `gripper_closed_on_block`. Put the block back, or re-run `--set-pose` if the spot moved.
+Flags: `--approach`, `--lift`, `--hold` (m, m, s), `--speed` (peak hand speed of the lines, m/s),
+`--max-velocity` (peak joint speed of the joint moves, rad/s), `--max-error` (abort if a joint lags
+its reference by more, 0.15 rad), `--jitter` (random x/y offset of the approach point, m),
+`--grasp-force`, `--gripper-speed`, `--allow-missing`, plus the camera flags of `data.py record`.
+The block must fit between the fingers (Franka Hand opens to 8 cm).
+
+`--sim` runs the same script against `prox_real/sim_franky.py`: a fake `franky` backed by MuJoCo
+physics in real time (the parent repo's FR3 + hand model, a table and a cube centred at the
+saved grasp pose, joint impedance with gravity compensation, force-limited fingers). No sensors
+or cameras; it prints how far the block rose and where it was put back. `--sim-block` sets the
+cube size (0 = no block, to exercise the failure path), `--sim-view` opens the MuJoCo viewer.
+2026-11-10 with the lab pick_pose.json: 5 of 5 episodes lifted the block 99 mm, max tracking
+error 0.009 rad. Without the place gap the block crept 2 mm per episode (it slipped in the
+fingers, hit the table early and the hand, tilted 6.6 deg, shoved it); with it about 0.5 mm per
+episode. The real drift is unknown: look at the block every ~10 episodes.
 
 ## Waypoint recorder
 
