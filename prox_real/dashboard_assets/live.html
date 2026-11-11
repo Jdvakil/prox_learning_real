@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot Live View</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #e2e5ea; --ink: #1d2330; --ink2: #5b6475; --muted: #8b93a3;
+    --q: #2a6fdb; --target: #d9822b; --ok: #2e9d5b; --warn: #c9a227; --bad: #d1453b; --track: #edf0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --panel: #1b1f27; --line: #2c323d; --ink: #e7eaf0; --ink2: #a8b0bf; --muted: #6f7888;
+      --q: #5b9bff; --target: #f0a04b; --ok: #4cc27f; --warn: #e3c14b; --bad: #f06b5f; --track: #262b35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .pill { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink2); font-variant-numeric: tabular-nums; }
+  .pill.rec { color: #fff; background: var(--bad); border-color: var(--bad); }
+  .pill.idle { color: var(--ink2); }
+  .pill.lost { color: #fff; background: var(--muted); border-color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(340px, 1.3fr); gap: 12px; padding: 12px 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink2); margin: 0 0 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .legend { display: flex; gap: 12px; font-size: 11px; color: var(--ink2); text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .sw { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 4px; }
+  .joint { display: grid; grid-template-columns: 22px 1fr 150px; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+  .joint:first-of-type { border-top: 0; }
+  .jname { color: var(--ink2); font-weight: 600; }
+  .jnum { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink2); text-align: right; white-space: nowrap; }
+  .jnum b { color: var(--ink); font-weight: 600; }
+  canvas { display: block; width: 100%; }
+  .cams { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+  .cam figure { margin: 0; }
+  .cam img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; border-radius: 4px; display: block; }
+  .cam figcaption { font-size: 11px; color: var(--ink2); margin-top: 2px; }
+  .empty { color: var(--muted); padding: 16px 0; text-align: center; }
+  .links { display: flex; flex-direction: column; gap: 8px; }
+  .link { display: grid; grid-template-columns: 82px 1fr; gap: 8px; align-items: start; }
+  .lname { color: var(--ink2); font-weight: 600; padding-top: 14px; font-size: 12px; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tile { width: 64px; }
+  .tile canvas { width: 64px; height: 64px; border-radius: 3px; outline: 2px solid transparent; image-rendering: pixelated; }
+  .tile.stale canvas { outline-color: var(--warn); }
+  .tile.dead canvas { outline-color: var(--bad); opacity: .35; }
+  .tile .cap { font-size: 10px; color: var(--muted); display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+  .scale { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink2); text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .scale canvas { width: 120px; height: 8px; border-radius: 2px; }
+  select, button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  .wide { grid-column: 1 / -1; }
+  .summary { font-size: 12px; color: var(--ink2); margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Robot live view</h1>
+  <span id="status" class="pill lost">connecting</span>
+  <span class="pill" id="phase">phase –</span>
+  <span class="pill" id="clock">t –</span>
+  <span class="pill" id="width">gripper –</span>
+  <span class="pill" id="sensorsum">sensors –</span>
+</header>
+<main>
+  <section>
+    <h2>Joints <span class="legend"><span><span class="sw" style="background:var(--q)"></span>measured</span><span><span class="sw" style="background:var(--target)"></span>target</span><span>last 20 s</span></span></h2>
+    <div id="joints"></div>
+  </section>
+  <section>
+    <h2>Cameras</h2>
+    <div class="cams" id="cams"><div class="empty">no cameras</div></div>
+  </section>
+  <section class="wide">
+    <h2>Proximity sensors
+      <span class="scale">
+        <select id="block"><option value="0">block 1: confident zones</option><option value="1">block 2: with fills</option></select>
+        near <canvas id="scale" width="120" height="8"></canvas> 1 m+ / none
+      </span>
+    </h2>
+    <div class="summary" id="sensornote"></div>
+    <div class="links" id="links"></div>
+  </section>
+</main>
+<script>
+const HISTORY_S = 20, POLL_MS = 100, FAR_MM = 1000;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $ = id => document.getElementById(id);
+let history = [], built = false, camsShown = "", tiles = [];
+
+// Near = warm and bright, far = dark; "no target" = flat panel colour.
+function heat(mm, none) {
+  if (mm >= none || mm === 0) return null;
+  const s = Math.min(1, mm / FAR_MM);
+  const h = 20 + 200 * s, l = 62 - 40 * s, c = 90 - 50 * s;
+  return `hsl(${h} ${c}% ${l}%)`;
+}
+(function drawScale() {
+  const c = $("scale"), g = c.getContext("2d");
+  for (let x = 0; x < c.width; x++) { g.fillStyle = heat(x / c.width * FAR_MM + 1, 1e9); g.fillRect(x, 0, 1, c.height); }
+})();
+
+function buildJoints(n) {
+  const box = $("joints"); box.innerHTML = "";
+  for (let j = 0; j < n; j++) {
+    const row = document.createElement("div"); row.className = "joint";
+    row.innerHTML = `<div class="jname">J${j + 1}</div><canvas height="34"></canvas><div class="jnum"></div>`;
+    box.appendChild(row);
+  }
+}
+
+function drawJoint(canvas, j, s) {
+  const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = 34;
+  if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = h * dpr; }
+  const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const lo = s.q_min[j], hi = s.q_max[j];
+  // Range bar: where the joint sits within its limits.
+  const bar = 8, x = v => (v - lo) / (hi - lo) * w;
+  g.fillStyle = css("--track"); g.fillRect(0, h - bar, w, bar);
+  const pts = history.filter(p => p.q);
+  if (s.q) {
+    const margin = 0.05 / (hi - lo) * w;
+    g.fillStyle = css("--bad"); g.globalAlpha = .35; g.fillRect(0, h - bar, margin, bar); g.fillRect(w - margin, h - bar, margin, bar); g.globalAlpha = 1;
+    g.fillStyle = css("--q"); g.fillRect(x(s.q[j]) - 1.5, h - bar - 2, 3, bar + 2);
+    if (s.target) { g.strokeStyle = css("--target"); g.lineWidth = 2; g.strokeRect(x(s.target[j]) - 3, h - bar - 1, 6, bar); }
+  }
+  // Sparkline of the last HISTORY_S seconds, auto-scaled with a 0.05 rad minimum span.
+  if (pts.length > 1) {
+    const top = h - bar - 4, t1 = pts[pts.length - 1].time, t0 = t1 - HISTORY_S;
+    let a = Infinity, b = -Infinity;
+    for (const p of pts) { for (const v of [p.q[j], p.target ? p.target[j] : p.q[j]]) { a = Math.min(a, v); b = Math.max(b, v); } }
+    const mid = (a + b) / 2, span = Math.max(b - a, 0.05);
+    const px = t => (t - t0) / HISTORY_S * w, py = v => top - 2 - ((v - mid) / span + 0.5) * (top - 4);
+    for (const [key, col] of [["target", "--target"], ["q", "--q"]]) {
+      g.beginPath(); g.strokeStyle = css(col); g.lineWidth = key === "q" ? 1.5 : 1.2;
+      if (key === "target") g.setLineDash([3, 2]); else g.setLineDash([]);
+      let started = false;
+      for (const p of pts) {
+        if (!p[key]) { started = false; continue; }
+        const X = px(p.time), Y = py(p[key][j]);
+        if (!started) { g.moveTo(X, Y); started = true; } else g.lineTo(X, Y);
+      }
+      g.stroke();
+    }
+    g.setLineDash([]);
+  }
+}
+
+function updateJoints(s) {
+  const n = s.q_min.length;
+  if (!built) { buildJoints(n); built = true; }
+  const rows = $("joints").children;
+  for (let j = 0; j < n; j++) {
+    const [, canvas, num] = rows[j].children;
+    drawJoint(canvas, j, s);
+    if (!s.q) { num.innerHTML = "–"; continue; }
+    const err = s.target ? Math.abs(s.q[j] - s.target[j]) : null;
+    num.innerHTML = `<b>${s.q[j].toFixed(3)}</b>` + (s.target ? ` → ${s.target[j].toFixed(3)}` : "") +
+      `<br>${err === null ? "" : "err " + err.toFixed(4) + " · "}${s.dq ? s.dq[j].toFixed(2) + " rad/s" : ""}`;
+  }
+}
+
+function updateCams(s) {
+  const key = s.cameras.join(",");
+  if (key === camsShown) return;
+  camsShown = key;
+  const box = $("cams");
+  box.innerHTML = s.cameras.length ? "" : '<div class="empty">no cameras</div>';
+  for (const name of s.cameras) {
+    const div = document.createElement("div"); div.className = "cam";
+    div.innerHTML = `<figure><img alt="${name}" src="/stream/${encodeURIComponent(name)}"><figcaption>${name}</figcaption></figure>`;
+    box.appendChild(div);
+  }
+}
+
+function buildSensors(sen) {
+  const box = $("links"); box.innerHTML = ""; tiles = [];
+  const groups = {};
+  sen.names.forEach((name, i) => { (groups[sen.links[i]] = groups[sen.links[i]] || []).push(i); });
+  for (const [link, idx] of Object.entries(groups)) {
+    const row = document.createElement("div"); row.className = "link";
+    row.innerHTML = `<div class="lname">${link}</div><div class="tiles"></div>`;
+    for (const i of idx) {
+      const t = document.createElement("div"); t.className = "tile";
+      t.innerHTML = `<canvas width="8" height="8"></canvas><div class="cap"><span>#${sen.names[i].split(" ").pop()}</span><span></span></div>`;
+      t.title = sen.names[i];
+      row.children[1].appendChild(t); tiles[i] = t;
+    }
+    box.appendChild(row);
+  }
+}
+
+function updateSensors(sen) {
+  if (tiles.length !== sen.names.length) buildSensors(sen);
+  const raw = atob(sen.depth), buf = new Uint16Array(raw.length / 2);
+  for (let i = 0; i < buf.length; i++) buf[i] = raw.charCodeAt(2 * i) | (raw.charCodeAt(2 * i + 1) << 8);
+  const block = +$("block").value, flat = css("--track");
+  let live = 0, stale = 0, nearest = Infinity, nearestName = "";
+  sen.names.forEach((name, i) => {
+    const t = tiles[i], g = t.querySelector("canvas").getContext("2d"), age = sen.age_ms[i];
+    t.classList.toggle("dead", age === null); t.classList.toggle("stale", age !== null && age > 500);
+    t.querySelector(".cap span:last-child").textContent = age === null ? "none" : age > 500 ? (age / 1000).toFixed(1) + "s" : "";
+    if (age === null) { g.fillStyle = flat; g.fillRect(0, 0, 8, 8); return; }
+    if (age > 500) stale++; else live++;
+    for (let z = 0; z < 64; z++) {
+      const mm = buf[i * 128 + block * 64 + z];
+      if (mm > 0 && mm < sen.no_target && mm < nearest) { nearest = mm; nearestName = name; }
+      g.fillStyle = heat(mm, sen.no_target) || flat; g.fillRect(z % 8, Math.floor(z / 8), 1, 1);
+    }
+  });
+  const total = sen.names.length;
+  $("sensorsum").textContent = `sensors ${live}/${total} live`;
+  $("sensorsum").style.color = live === total ? css("--ok") : live === 0 ? css("--bad") : css("--warn");
+  $("sensornote").textContent = live === 0 && stale === 0
+    ? "No packets from any sensor: check the sensor boards / network before recording."
+    : `${live} live, ${stale} stale (>0.5 s), ${total - live - stale} silent` +
+      (nearest < Infinity ? ` · nearest ${nearest} mm (${nearestName})` : "");
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/state.json", { cache: "no-store" });
+    const s = await r.json();
+    const now = performance.now() / 1000;
+    history.push({ time: now, q: s.q, target: s.target });
+    while (history.length && history[0].time < now - HISTORY_S) history.shift();
+    $("title").textContent = "Robot live view" + (s.title ? " · " + s.title : "");
+    const st = $("status");
+    st.className = "pill " + (s.recording ? "rec" : "idle");
+    st.textContent = s.recording ? "● recording" : s.q ? "idle (arm read directly)" : "idle";
+    $("phase").textContent = "phase " + (s.phase == null ? "–" : s.phase);
+    $("clock").textContent = "t " + (s.t == null ? "–" : s.t.toFixed(1) + " s");
+    $("width").textContent = "gripper " + (s.width == null ? "–" : (s.width * 1000).toFixed(1) + " mm");
+    updateJoints(s); updateCams(s); updateSensors(s.sensors);
+  } catch (e) {
+    const st = $("status"); st.className = "pill lost"; st.textContent = "no connection (collector stopped?)";
+    camsShown = null;                       // reopen the camera streams when the server is back
+  }
+  setTimeout(poll, POLL_MS);
+}
+poll();
+</script>
+</body>
+</html>

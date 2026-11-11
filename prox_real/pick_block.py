@@ -41,6 +41,7 @@ from types import SimpleNamespace
 import h5py
 import numpy as np
 
+from . import live_dashboard
 from . import record_dataset as base
 from .kinesthetic import Q_MAX, Q_MIN, REPLAY_DAMPING, REPLAY_STIFFNESS
 
@@ -442,6 +443,7 @@ def parse_args(argv=None):
                    help="run on a MuJoCo arm + block instead of the robot (desktop, needs the parent repo)")
     p.add_argument("--sim-block", type=float, default=0.05, help="simulated cube size (m); 0 = no block")
     p.add_argument("--sim-view", action="store_true", help="open the MuJoCo viewer")
+    live_dashboard.add_args(p)
     args = p.parse_args(argv)
     if args.sim:
         args.no_cameras, args.allow_missing, args.warmup_timeout = True, True, min(args.warmup_timeout, 0.5)
@@ -510,6 +512,8 @@ def main(argv=None):
         gripper = base.GripperReader(args.host)
         gripper.start()
         cleanup.callback(gripper.stop_event.set)
+        cleanup.callback(live_dashboard.stop, live_dashboard.start(
+            args, robot, gripper, listener, cameras, PHASES, "pick" + (" (sim)" if args.sim else "")))
         print("going home, gripper open (not recorded)")
         gripper.gripper.open(args.gripper_speed)
         robot.move(JointMotion(HOME))

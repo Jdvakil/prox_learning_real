@@ -64,6 +64,7 @@ ZONES = 8
 JSON_ROW = 2000                  # bytes per JSON row, as in the sim files
 NO_TARGET_M = NO_TARGET_MM / 1000.0
 SENSORS = [(name, sensor_id) for name, count in SENSORS_PER_LINK.items() for sensor_id in range(count)]
+LIVE = None          # live_dashboard.LiveDashboard while one runs; sample() hands it every record
 
 # Joint targets [rad] from the franky waypoint example. Edit these for the workspace.
 POSITIONS = np.array(
@@ -386,6 +387,8 @@ def sample(robot, listener, gripper, runner, recorders, t0):
         (rgb, _, number, _, arrived), _ = rec.cam.latest()
         rec.tick(rgb)
         record[rec.cam.name] = (number, (now - arrived) * 1000.0)
+    if LIVE is not None:
+        LIVE.publish(record)
     return record
 
 
@@ -555,7 +558,7 @@ def collect(args, row):
     gripper = None
     cameras, recorders = [], []
     handle = None
-    robot = runner = failure = None
+    robot = runner = failure = dashboard = None
     records = []
     t0 = time.monotonic()
     try:
@@ -572,6 +575,9 @@ def collect(args, row):
             except Exception as exc:
                 print(f"warning: no gripper width ({exc})")
                 gripper = None
+        from . import live_dashboard
+
+        dashboard = live_dashboard.start(args, robot, gripper, listener, cameras, None, "waypoint recorder")
 
         row.mkdir(parents=True, exist_ok=False)
         handle = h5py.File(row / "trajectory.h5", "w")
@@ -617,6 +623,10 @@ def collect(args, row):
             stop_motion(robot, runner)
         for rec in recorders:
             rec.finish()
+        if dashboard is not None:
+            from . import live_dashboard
+
+            live_dashboard.stop(dashboard)
         listener.stop_event.set()
         listener.join(timeout=1.0)
         if gripper:
@@ -712,6 +722,9 @@ def main(argv=None):
         default=None,
         help="row folder to create (default: recordings/<utc timestamp>/)",
     )
+    from . import live_dashboard
+
+    live_dashboard.add_args(parser)
     args = parser.parse_args(argv)
     if not args.no_cameras:
         try:

@@ -18,6 +18,7 @@ python data.py cameras      list RealSense cameras, save snapshots, --live view 
 python data.py record       move through POSITIONS, log robot + 40 sensors + cameras
 python data.py waypoints    noisy A -> B episodes for ACT
 python data.py pick         scripted pick of a block at a fixed spot (--set-pose first)
+python data.py live         live browser view of sensors, cameras (--robot joints), no recording
 python data.py teach        kinesthetic teaching (arm floats, move it by hand)
 python data.py replay       replay taught demos on the stiff tracker, log rows
 python data.py dashboard    offline HTML dashboard of recorded rows -> viz/
@@ -312,6 +313,39 @@ cube size (0 = no block, to exercise the failure path), `--sim-view` opens the M
 error 0.009 rad. Without the place gap the block crept 2 mm per episode (it slipped in the
 fingers, hit the table early and the hand, tilted 6.6 deg, shoved it); with it about 0.5 mm per
 episode. The real drift is unknown: look at the block every ~10 episodes.
+
+## Live dashboard
+
+`data.py pick`, `data.py waypoints` and `data.py record` serve a live browser page while they
+run and print its address (`http://localhost:8050`; from another machine use the robot PC's
+hostname). It shows:
+- **Joints:** each joint within its limits, the measured position next to the commanded target,
+  a 20 s trace, the tracking error and the speed.
+- **Status:** phase, episode clock and gripper width.
+- **Cameras:** every open camera as a ~10 fps MJPEG stream.
+- **Proximity sensors:** all 40 sensors as 8x8 heat maps grouped by link (block 1 or block 2;
+  near = bright). A sensor with no packets is greyed out and a stale one (>0.5 s) is outlined;
+  the header counts live sensors.
+
+Missing pieces show as missing. Between episodes the joints are read straight from the arm.
+`--no-dashboard` turns it off, `--dashboard-port` moves it. It is `prox_real/live_dashboard.py`
+plus `prox_real/dashboard_assets/live.html` (Python standard library HTTP server, no extra
+packages, nothing runs until a browser connects). The collector's `base.sample()` hands it each
+logged tick.
+
+Check sensors and cameras before recording, without moving anything:
+
+```bash
+python data.py live --wrist-serial 836612071883 --exo-serial 943222071556
+python data.py live --robot --gripper              # also joints and gripper, read-only
+```
+
+2026-11-11: `recordings/pick_20261111T220018Z` is the first clean real pick.
+- **Pick:** gripper closed on the block at 24 mm and held it through the lift.
+- **Tracking:** max error 0.010 rad, the same as the sim.
+- **Cameras:** both at 30 fps with no dropped frames.
+- **Proximity sensors:** none. All 40 were silent for the whole row (`--allow-missing`), so its
+  proximity channels are empty. Check the dashboard's sensor count before collecting the batch.
 
 ## Waypoint recorder
 

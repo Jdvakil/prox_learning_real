@@ -20,6 +20,7 @@ from types import SimpleNamespace
 import h5py
 import numpy as np
 
+from . import live_dashboard
 from . import record_dataset as base
 from .kinesthetic import Q_MIN, Q_MAX, REPLAY_STIFFNESS, REPLAY_DAMPING
 
@@ -318,6 +319,7 @@ def parse_args(argv=None):
     parser.add_argument("--rgb-h5", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="save plans only; no hardware connection")
     parser.add_argument("--output", type=Path, default=None, help="new batch directory containing episode rows")
+    live_dashboard.add_args(parser)
     args = parser.parse_args(argv)
     try:
         if args.episodes <= 0 or args.seed < 0:
@@ -373,6 +375,8 @@ def main(argv=None):
         robot = Robot(args.host)
         robot.recover_from_errors()
         robot.relative_dynamics_factor = args.dynamics
+        cleanup.callback(live_dashboard.stop, live_dashboard.start(
+            args, robot, None, listener, cameras, None, "A -> B waypoints"))
         for i, plan in enumerate(plans):
             print(f"episode {i + 1}/{len(plans)}, seed {plan.seed}")
             collect_episode(robot, listener, cameras, plan, args,
