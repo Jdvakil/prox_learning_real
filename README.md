@@ -291,6 +291,24 @@ the approach or descent with `cartesian_motion_generator_joint_velocity_disconti
 elbow was free and drifted, joint 6 ended at 3.30 instead of the posed 2.84). Hence the joint
 trajectory.
 
+2026-11-11: batches of 10 failed at the start of episode 2 (`tracking error 0.204 rad`, arm
+sinking). Cause:
+- franky ends a tracker with a damping-only `TorqueStopMotion`: zero stiffness for up to 2 s.
+- The robot's gravity model lacks about 5 Nm on joint 2: mass at the hand (skin, sensors,
+  camera). It shows as a 0.0087 rad lag while holding, at stiffness 600.
+- So during each stop the arm sinks at about 0.1 rad/s, and episode 2 started 0.2 rad below
+  HOME.
+
+Now:
+- The tracker stops within 0.3 s.
+- Every episode starts with franky's position-controlled `JointMotion` to HOME (not recorded),
+  and the batch ends there too.
+- The tracker is not engaged unless the arm is within 0.03 rad of HOME.
+
+Setting the end-effector load (mass and centre of mass of hand + skin + camera) in Desk would
+remove the lag and the sinking at the source. `--sim` models this load (1.2 kg uncompensated at
+the hand) and franky's stop, and reproduced the crash (0.227 rad) before the fix.
+
 Same row layout as the other recorders. Actions are the joint reference sent to the tracker at
 each 15 Hz tick plus the gripper command (0 open, 1 close); `obs/extra/policy_phase` gives the step
 (`start, approach, descend, grasp, lift, hold`). If the gripper is not holding the block after the

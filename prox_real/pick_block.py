@@ -48,6 +48,11 @@ from .kinesthetic import Q_MAX, Q_MIN, REPLAY_DAMPING, REPLAY_STIFFNESS
 HOME = [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
 POSE_FILE = Path(__file__).resolve().parents[1] / "pick_pose.json"
 CONTROL_HZ = 100.0
+START_TOLERANCE = 0.03      # rad; the tracker is not engaged unless the arm is this close to HOME
+# franky ends a tracker with a damping-only TorqueStopMotion (zero stiffness, up to 2 s). The
+# hand carries mass the robot's gravity model lacks, so the arm sinks ~0.1 rad/s meanwhile:
+# 0.2 rad by default, which failed episode 2 on 2026-11-11. Stop fast, the robot then idles.
+STOP_RAMP_S, STOP_MAX_S = 0.05, 0.3
 PHASES = ["start", "approach", "descend", "grasp", "lift", "hold"]
 GRIPPER_COMMAND = {"start": 0.0, "approach": 0.0, "descend": 0.0, "grasp": 1.0, "lift": 1.0, "hold": 1.0}
 
@@ -255,22 +260,34 @@ class PickRunner(threading.Thread):
 
         if self.control_cpus:
             os.sched_setaffinity(0, self.control_cpus)
+        tracker = None
         try:
-            with JointImpedanceTracker(self.robot, stiffness=REPLAY_STIFFNESS, damping=REPLAY_DAMPING,
-                                       lower_joint_limits=Q_MIN, upper_joint_limits=Q_MAX,
-                                       period=1 / CONTROL_HZ) as tracker:
-                self.run_segments(tracker, self.plan.pick, recorded=True)
-                self.recorded.set()
-                hold, zero = self.reference, np.zeros(7)
-                while not self.resume.is_set():         # keep holding the block while files are written
-                    if self.abort.is_set():
-                        raise RuntimeError("aborted")
-                    self.track(tracker, hold, zero)
-                self.run_segments(tracker, self.plan.put_back if self.grasped else self.plan.give_up,
-                                  recorded=False)
+            offset = np.abs(np.asarray(self.robot.state.q) - HOME)
+            if offset.max() > START_TOLERANCE:      # never engage the tracker with a jump in the target
+                raise RuntimeError(f"arm is not at HOME (joint {int(offset.argmax()) + 1} off by "
+                                   f"{offset.max():.3f} rad); not starting")
+            # The tracker takes control when constructed and seeds its target with the current q.
+            tracker = JointImpedanceTracker(self.robot, stiffness=REPLAY_STIFFNESS, damping=REPLAY_DAMPING,
+                                            lower_joint_limits=Q_MIN, upper_joint_limits=Q_MAX,
+                                            period=1 / CONTROL_HZ)
+            self.run_segments(tracker, self.plan.pick, recorded=True)
+            self.recorded.set()
+            hold, zero = self.reference, np.zeros(7)
+            while not self.resume.is_set():             # keep holding the block while files are written
+                if self.abort.is_set():
+                    raise RuntimeError("aborted")
+                self.track(tracker, hold, zero)
+            self.run_segments(tracker, self.plan.put_back if self.grasped else self.plan.give_up,
+                              recorded=False)
         except BaseException as exc:
             self.error = exc
         finally:
+            if tracker is not None:
+                try:
+                    stop_tracker(tracker)
+                except Exception as exc:
+                    if self.error is None:
+                        self.error = exc
             self.recorded.set()
             self.done.set()
 
@@ -282,6 +299,21 @@ class PickRunner(threading.Thread):
             if self.is_alive():
                 self.robot.stop()
                 self.join(timeout=3)
+
+
+def stop_tracker(tracker):
+    """End the tracker with a short damping-only stop (franky's default sinks the arm for 2 s)."""
+    try:
+        from franky import TorqueStopMotion
+    except ImportError:
+        return tracker.stop()
+    return tracker.stop(TorqueStopMotion(ramp_duration=STOP_RAMP_S, max_duration=STOP_MAX_S))
+
+
+def go_home(robot, JointMotion):
+    """Not recorded: franky's position-controlled move to HOME, so every episode starts exactly there."""
+    robot.recover_from_errors()
+    robot.move(JointMotion(HOME))
 
 
 def write_episode(handle, records, runner, args, recorders, holding, failure):
@@ -516,9 +548,9 @@ def main(argv=None):
             args, robot, gripper, listener, cameras, PHASES, "pick" + (" (sim)" if args.sim else "")))
         print("going home, gripper open (not recorded)")
         gripper.gripper.open(args.gripper_speed)
-        robot.move(JointMotion(HOME))
         for i, plan in enumerate(plans):
             print(f"episode {i + 1}/{args.episodes}")
+            go_home(robot, JointMotion)
             if world is not None:
                 start = world.block_position()
                 world.reset_block_stats()
@@ -534,6 +566,8 @@ def main(argv=None):
                       f"max tracking error {runner.max_seen_error:.4f} rad, "
                       f"peak torque {np.round(world.max_torque, 1).tolist()} Nm")
             if not holding:
+                go_home(robot, JointMotion)
                 raise SystemExit("pick failed; check the block position, then run again "
                                  "(re-run --set-pose if the spot moved)")
+        go_home(robot, JointMotion)                 # end held at HOME, not where the last stop left it
     print(f"done: {args.episodes} episodes in {output}")

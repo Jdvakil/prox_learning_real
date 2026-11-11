@@ -49,6 +49,14 @@ class Tracker:
         self.robot.state.q = np.array(q)
         self.robot.history.append(np.array(q))
 
+    def stop(self, stop_motion=None):
+        self.robot.stops.append(stop_motion)
+
+
+class StopMotion:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
 
 def fast_args(*extra):
     return pick.parse_args(["--no-cameras", "--lead", "0", "--hold", "0.1", "--speed", "0.5",
@@ -95,7 +103,7 @@ class PlanTests(unittest.TestCase):
 
 class MockRobotTests(unittest.TestCase):
     def run_episode(self, grasp_ok, width):
-        robot = SimpleNamespace(state=SimpleNamespace(q=np.array(pick.HOME)), history=[])
+        robot = SimpleNamespace(state=SimpleNamespace(q=np.array(pick.HOME)), history=[], stops=[])
         grip = SimpleNamespace(grasp_async=lambda *a, **kw: Done(grasp_ok), open_async=lambda speed: Done(True),
                                width=width)
         reader = SimpleNamespace(gripper=grip, width=width)
@@ -108,7 +116,8 @@ class MockRobotTests(unittest.TestCase):
         args = fast_args()
         plan = pick.Plan(SAVED, args, np.random.default_rng(0))
         with tempfile.TemporaryDirectory() as temp, \
-                patch.dict(sys.modules, {"franky": SimpleNamespace(JointImpedanceTracker=Tracker)}), \
+                patch.dict(sys.modules, {"franky": SimpleNamespace(JointImpedanceTracker=Tracker,
+                                                                   TorqueStopMotion=StopMotion)}), \
                 patch.object(pick.base, "read_robot_state", side_effect=state):
             row = Path(temp) / "episode_0000"
             runner, holding = pick.collect_episode(robot, reader, SimpleNamespace(snapshot=lambda: {}), [],
@@ -135,6 +144,24 @@ class MockRobotTests(unittest.TestCase):
             self.assertEqual(a["gripper"][0], pick.GRIPPER_COMMAND[pick.PHASES[p]])
         self.assertTrue(np.all(np.diff(phases) >= 0))
         self.assertEqual(phases[-1], pick.PHASES.index("hold"))
+
+    def test_tracker_ends_with_a_short_stop(self):
+        robot = self.run_episode(True, 0.03)[0]
+        self.assertEqual(len(robot.stops), 1)                   # franky's default would sink the arm for 2 s
+        self.assertLessEqual(robot.stops[0].kwargs["max_duration"], 0.3)
+
+    def test_arm_away_from_home_is_refused_without_engaging_the_tracker(self):
+        robot = SimpleNamespace(state=SimpleNamespace(q=np.array(pick.HOME) + [0, 0.204, 0, 0, 0, 0, 0]),
+                                history=[], stops=[])
+        plan = pick.Plan(SAVED, fast_args(), np.random.default_rng(0))
+        engaged = []
+        franky = SimpleNamespace(JointImpedanceTracker=lambda *a, **kw: engaged.append(1), TorqueStopMotion=StopMotion)
+        with patch.dict(sys.modules, {"franky": franky}):
+            runner = pick.PickRunner(robot, None, plan, fast_args())
+            runner.start()
+            runner.join(2)
+        self.assertIn("not at HOME", str(runner.error))
+        self.assertEqual(engaged, [])
 
     def test_empty_gripper_is_a_failed_episode_and_arm_still_goes_home(self):
         # libfranka's grasp passes with nothing in the hand (width 0 is inside the epsilons).

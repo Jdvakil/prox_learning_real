@@ -25,6 +25,11 @@ HOLD_STIFFNESS = np.array([3000, 3000, 3000, 2500, 1500, 1000, 500.0])
 HOLD_DAMPING = np.array([100, 100, 100, 80, 50, 40, 20.0])
 FR3_VMAX = np.array([2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26])
 MAX_WIDTH = 0.08
+# Mass at the hand that the robot's gravity model leaves out (skin, sensors, camera). The real arm
+# shows ~5 Nm on joint 2: 0.0086 rad lag at stiffness 600 while holding, and a 0.1 rad/s sink under
+# franky's damping-only stop (2026-11-11 logs). 1.2 kg at the hand reproduces both.
+UNMODELED_LOAD_KG = 1.2
+STOP_DAMPING = np.array([50, 50, 50, 50, 30, 25, 15.0])     # franky TorqueStopMotion: damping only
 
 
 class World(threading.Thread):
@@ -90,6 +95,7 @@ class World(threading.Thread):
         self.block_top = -np.inf          # highest block centre since reset_block_stats()
         self.stop_event = threading.Event()
         self.viewer = viewer
+        self.hand_body = m.body("fr3_hand").id
 
     def set_width(self, width):
         """Finger actuator target: force = 4 - ctrl / 63.75 - 100 * opening per finger."""
@@ -117,6 +123,7 @@ class World(threading.Thread):
         self.max_torque = np.maximum(self.max_torque, np.abs(tau))
         d.qfrc_applied[:] = 0
         d.qfrc_applied[self.arm_dofs] = tau + d.qfrc_bias[self.arm_dofs]
+        d.xfrc_applied[self.hand_body, 2] = -UNMODELED_LOAD_KG * 9.81      # not compensated, as on the robot
         self.mujoco.mj_step(self.model, d)
         if self.block_qpos is not None:
             self.block_top = max(self.block_top, d.qpos[self.block_qpos + 2])
@@ -199,27 +206,51 @@ def fake_franky(world, f_t_ee):
             q, dq = read()
             return types.SimpleNamespace(q=q, dq=dq, elbow=types.SimpleNamespace(joint_3_pos=q[2], joint_4_flip=None))
 
-    class JointImpedanceTracker:
-        def __init__(self, robot, stiffness, damping, lower_joint_limits, upper_joint_limits, period, **kwargs):
-            self.gains = np.asarray(stiffness, dtype=np.float64), np.asarray(damping, dtype=np.float64)
-            self.lower, self.upper = np.asarray(lower_joint_limits), np.asarray(upper_joint_limits)
-            self.period = period
+    class TorqueStopMotion:
+        def __init__(self, damping=None, ramp_duration=0.2, velocity_epsilon=0.02, max_duration=2.0, **kwargs):
+            self.damping = STOP_DAMPING if damping is None else np.asarray(damping, dtype=np.float64)
+            self.ramp_duration, self.velocity_epsilon, self.max_duration = ramp_duration, velocity_epsilon, max_duration
 
-        def __enter__(self):
+    class JointImpedanceTracker:
+        """Like franky: control starts at construction; stop()/__exit__ run a damping-only stop."""
+
+        def __init__(self, robot, stiffness, damping, lower_joint_limits, upper_joint_limits, period, **kwargs):
+            self.lower, self.upper = np.asarray(lower_joint_limits), np.asarray(upper_joint_limits)
+            self.period, self.stopped = period, False
             q, _ = read()
             with world.lock:
-                world.stiffness, world.damping = self.gains
+                world.stiffness, world.damping = np.asarray(stiffness, float), np.asarray(damping, float)
                 world.q_ref, world.dq_ref = q, np.zeros(7)
             self.next = time.monotonic()
+
+        def __enter__(self):
             return self
 
         def __exit__(self, *args):
+            self.stop()
+
+        def stop(self, stop_motion=None):
+            """Zero stiffness, damping only, until at rest or max_duration; then the robot idles (holds)."""
+            if self.stopped:
+                return
+            self.stopped = True
+            motion = stop_motion or TorqueStopMotion()
+            with world.lock:
+                world.stiffness, world.damping = np.zeros(7), motion.damping
+                world.dq_ref = np.zeros(7)
+            t0 = time.monotonic()
+            while (elapsed := time.monotonic() - t0) < motion.max_duration:
+                if elapsed > motion.ramp_duration and np.abs(read()[1]).max() < motion.velocity_epsilon:
+                    break
+                time.sleep(0.005)
             q, _ = read()
             with world.lock:
                 world.stiffness, world.damping = HOLD_STIFFNESS, HOLD_DAMPING
                 world.q_ref, world.dq_ref = q, np.zeros(7)
 
         def tick(self):
+            if self.stopped:
+                return None
             self.next += self.period
             time.sleep(max(0.0, self.next - time.monotonic()))
             return self.period
@@ -290,6 +321,7 @@ def fake_franky(world, f_t_ee):
             return self.open_async(speed).get()
 
     mod.JointMotion, mod.Robot, mod.Gripper, mod.JointImpedanceTracker = JointMotion, Robot, Gripper, JointImpedanceTracker
+    mod.TorqueStopMotion = TorqueStopMotion
     return mod
 
 
