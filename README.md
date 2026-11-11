@@ -328,7 +328,9 @@ hostname). It shows:
   the header counts live sensors.
 
 Missing pieces show as missing. Between episodes the joints are read straight from the arm.
-`--no-dashboard` turns it off, `--dashboard-port` moves it. It is `prox_real/live_dashboard.py`
+The page opens in the desktop's browser by itself when the collector starts (before the arm
+moves); `--no-browser` only serves it, `--no-dashboard` turns it off, `--dashboard-port` moves it.
+Over ssh without a display nothing opens: use the printed address. It is `prox_real/live_dashboard.py`
 plus `prox_real/dashboard_assets/live.html` (Python standard library HTTP server, no extra
 packages, nothing runs until a browser connects). The collector's `base.sample()` hands it each
 logged tick.
