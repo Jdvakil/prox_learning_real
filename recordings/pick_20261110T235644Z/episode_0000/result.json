@@ -1,7 +1,0 @@
-{
-  "clean_success": false,
-  "holding_after_lift": false,
-  "gripper_closed_on_block": false,
-  "gripper_width_m": 0.08098472654819489,
-  "error": "RuntimeError('pick motion failed: Motion finished commanded, but the robot is still moving! [\"cartesian_motion_generator_joint_velocity_discontinuity\"]\\ncontrol_command_success_rate: 1')"
-}
