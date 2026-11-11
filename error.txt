@@ -1,26 +1,29 @@
-(franky) jaydv@verstappen:~/prox_learning_real$ python data.py pick --episodes 1 --wrist-serial 836612071883 --exo-serial 943222071556 --allow-missing
-robot control on CPU [7, 15], recording on the other 14
-warning: no packets from: link1 sensor 0, link1 sensor 1, link1 sensor 2, link1 sensor 3, link1 sensor 4, link1 sensor 5, link1 sensor 6, link2 sensor 0, link2 sensor 1, link2 sensor 2, link2 sensor 3, link2 sensor 4, link2 sensor 5, link2 sensor 6, link3 sensor 0, link3 sensor 1, link3 sensor 2, link3 sensor 3, link3 sensor 4, link5_small sensor 0, link5_small sensor 1, link5_small sensor 2, link5_small sensor 3, link5_large sensor 0, link5_large sensor 1, link5_large sensor 2, link5_large sensor 3, link5_large sensor 4, link5_large sensor 5, link6 sensor 0, link6 sensor 1, link6 sensor 2, link6 sensor 3, link6 sensor 4, link6 sensor 5, link4 sensor 0, link4 sensor 1, link4 sensor 2, link4 sensor 3, link4 sensor 4
-resetting cameras 836612071883, 943222071556
-going home, gripper open (not recorded)
-episode 1/1
+saved 234 ticks: recordings/pick_20261111T223727Z/episode_0000  (holding the block, width 24.2 mm)
+putting the block back (not recorded)
+  lower
+  open
+  rise
+  home
+episode 2/10
   approach
 Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 81, in run
-    self.robot.move(CartesianMotion(Affine(target)))
-franky._franky.ControlException: Motion finished commanded, but the robot is still moving! ["cartesian_motion_generator_acceleration_discontinuity", "cartesian_motion_generator_joint_velocity_discontinuity"]
-control_command_success_rate: 1
+  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 262, in run
+    self.run_segments(tracker, self.plan.pick, recorded=True)
+  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 232, in run_segments
+    self.track(tracker, q, v)
+  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 220, in track
+    raise RuntimeError(f"tracking error {error:.3f} rad > {self.args.max_error}")
+RuntimeError: tracking error 0.204 rad > 0.15
 
 The above exception was the direct cause of the following exception:
 
 Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/data.py", line 18, in <module>
+  File "/home/jaydv/prox_learning_real/data.py", line 19, in <module>
     sys.exit(run("data.py", __doc__.split(".")[0] + ".", COMMANDS))
   File "/home/jaydv/prox_learning_real/prox_real/cli.py", line 25, in run
     return getattr(importlib.import_module(f"prox_real.{module}"), function)(rest)
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 303, in main
-    runner, holding = collect_episode(robot, gripper, listener, cameras, grasp_pose, args,
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 178, in collect_episode
+  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 525, in main
+    runner, holding = collect_episode(robot, gripper, listener, cameras, plan, args,
+  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 359, in collect_episode
     raise RuntimeError(f"pick motion failed: {runner.error}") from runner.error
-RuntimeError: pick motion failed: Motion finished commanded, but the robot is still moving! ["cartesian_motion_generator_acceleration_discontinuity", "cartesian_motion_generator_joint_velocity_discontinuity"]
-control_command_success_rate: 1
+RuntimeError: pick motion failed: tracking error 0.204 rad > 0.15
