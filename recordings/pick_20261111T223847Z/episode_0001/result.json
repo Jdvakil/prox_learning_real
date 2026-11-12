@@ -1,8 +1,0 @@
-{
-  "clean_success": false,
-  "holding_after_lift": false,
-  "gripper_closed_on_block": false,
-  "gripper_width_m": 0.08095715194940567,
-  "max_tracking_error_rad": 0.20389909025993253,
-  "error": "RuntimeError('pick motion failed: tracking error 0.204 rad > 0.15')"
-}
