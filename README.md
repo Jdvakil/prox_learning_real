@@ -301,9 +301,9 @@ sinking). Cause:
 
 Now:
 - The tracker stops within 0.3 s.
-- Every episode starts with franky's position-controlled `JointMotion` to HOME (not recorded),
-  and the batch ends there too.
-- The tracker is not engaged unless the arm is within 0.03 rad of HOME.
+- Every episode starts with franky's position-controlled `JointMotion` to its start (HOME plus
+  `--start-noise`, not recorded), and the batch ends at HOME.
+- The tracker is not engaged unless the arm is within 0.03 rad of the episode start.
 
 Setting the end-effector load (mass and centre of mass of hand + skin + camera) in Desk would
 remove the lag and the sinking at the source. `--sim` models this load (1.2 kg uncompensated at
@@ -321,6 +321,23 @@ Flags: `--approach`, `--lift`, `--hold` (m, m, s), `--speed` (peak hand speed of
 its reference by more, 0.15 rad), `--jitter` (random x/y offset of the approach point, m),
 `--grasp-force`, `--gripper-speed`, `--allow-missing`, plus the camera flags of `data.py record`.
 The block must fit between the fingers (Franka Hand opens to 8 cm).
+
+Collection noise (on by default) spreads the observations so the policy does not see one path
+only. It changes the motion, not the recorded data: actions are still the reference actually
+sent, observations are still raw. Image, depth and proximity noise belong in training augmentation.
+- `--start-noise` (0.02 rad): Gaussian std per joint of each episode's start around HOME. The
+  unrecorded `JointMotion` goes there, and the recording starts there.
+- `--approach-noise` (0.005 m): Gaussian x/y/z offset of the point above the block.
+- `--noise-std` (0.02 rad): bends the approach move with three smooth sine modes per joint, like
+  `data.py waypoints`. Position, velocity and acceleration of the bend are zero at both ends. The
+  move is slowed if needed so the joint speed stays under `--max-velocity`.
+
+Draws are clipped at 3 std and reproducible from `--seed`. Too large a std is refused:
+3 std must stay under 0.15 rad and 0.02 m. The descent, grasp and lift are never perturbed;
+the grasp pose stays exact. Each row stores `start_q`, `approach_offset_m`,
+`approach_noise_modes_rad` and the three std values as `traj_0` attributes. Pass
+`--start-noise 0 --approach-noise 0 --noise-std 0` for the old fixed path. In sim, 4 of 4
+noisy episodes lifted the block 98-99 mm (max tracking error 0.013 rad, same as without noise).
 
 `--sim` runs the same script against `prox_real/sim_franky.py`: a fake `franky` backed by MuJoCo
 physics in real time (the parent repo's FR3 + hand model, a table and a cube centred at the

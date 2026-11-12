@@ -21,6 +21,13 @@ was. Straight lines are solved with FR3 inverse kinematics from the joint angles
 segment starts and ends at rest. --jitter adds a random x/y offset (m) to the approach point;
 the grasp pose never changes.
 
+Gaussian noise spreads the observations over more than one path, the grasp itself stays exact:
+--start-noise (rad per joint) moves each episode's start away from HOME (the unrecorded move
+there is franky's JointMotion), --approach-noise (m, x/y/z) moves the point above the block, and
+--noise-std (rad) bends the approach move with three smooth sine modes per joint, like data.py
+waypoints (zero position, velocity and acceleration at both ends). Draws are clipped at 3 sigma
+and reproducible from --seed. The descent, grasp and lift are never perturbed.
+
 Rows use the record_dataset.py layout (trajectory.h5 + videos + result.json). Actions are the
 joint reference sent to the tracker at each 15 Hz tick plus the gripper command (0 open,
 1 close); the step is obs/extra/policy_phase (names in its "phases" attribute). An episode whose
@@ -48,7 +55,7 @@ from .kinesthetic import Q_MAX, Q_MIN, REPLAY_DAMPING, REPLAY_STIFFNESS
 HOME = [0.0, 0.0, 0.0, -2.2, 0.0, 2.2, 0.7]
 POSE_FILE = Path(__file__).resolve().parents[1] / "pick_pose.json"
 CONTROL_HZ = 100.0
-START_TOLERANCE = 0.03      # rad; the tracker is not engaged unless the arm is this close to HOME
+START_TOLERANCE = 0.03      # rad; the tracker is not engaged unless the arm is this close to the episode start
 # franky ends a tracker with a damping-only TorqueStopMotion (zero stiffness, up to 2 s). The
 # hand carries mass the robot's gravity model lacks, so the arm sinks ~0.1 rad/s meanwhile:
 # 0.2 rad by default, which failed episode 2 on 2026-11-11. Stop fast, the robot then idles.
@@ -109,11 +116,32 @@ def samples(duration):
     return max(2, int(np.ceil(duration * CONTROL_HZ)) + 1)
 
 
-def joint_segment(q0, q1, max_velocity):
-    """Minimum-jerk joint move; peak speed 1.875 * distance / duration."""
+def joint_segment(q0, q1, max_velocity, modes=None):
+    """Minimum-jerk joint move; peak speed 1.875 * distance / duration.
+
+    modes (3 x 7, rad) adds sum_k modes[k] * sin(k pi s) under a 64 s^3 (1 - s)^3 envelope, so the
+    bend has zero position, velocity and acceleration at both ends; the move is slowed until its
+    peak joint speed is back under max_velocity.
+    """
     q0, q1 = np.asarray(q0, dtype=np.float64), np.asarray(q1, dtype=np.float64)
     duration = max(1.0, 1.875 * np.abs(q1 - q0).max() / max_velocity)
-    return q0 + min_jerk(samples(duration))[:, None] * (q1 - q0)
+    while True:
+        n = samples(duration)
+        path = q0 + min_jerk(n)[:, None] * (q1 - q0)
+        if modes is None or not np.any(modes):
+            return path
+        s = np.linspace(0, 1, n)
+        path = path + (64 * s**3 * (1 - s)**3)[:, None] * (np.sin(np.outer(s, np.pi * np.arange(1, 4))) @ modes)
+        if np.abs(np.diff(path, axis=0)).max() * CONTROL_HZ <= max_velocity:
+            return path
+        duration *= 1.1
+
+
+def gaussian(rng, std, shape):
+    """Zero-mean Gaussian draw clipped at 3 std; no draw (and no rng use) when std is 0."""
+    if std <= 0:
+        return np.zeros(shape)
+    return np.clip(rng.normal(0.0, std, shape), -3 * std, 3 * std)
 
 
 def line_segment(q0, pose0, pose1, f_t_ee, speed):
@@ -146,12 +174,16 @@ class Plan:
         self.grasp_q = np.asarray(saved["grasp_q"], dtype=np.float64)
         self.f_t_ee = np.linalg.inv(flange(self.grasp_q)) @ self.grasp
         jitter = rng.uniform(-args.jitter, args.jitter, 2) if args.jitter > 0 else np.zeros(2)
-        self.above = shifted(self.grasp, jitter[0], jitter[1], args.approach)
+        # Collection noise (see the module docstring): start, approach point, approach bend.
+        self.start = np.asarray(HOME, dtype=np.float64) + gaussian(rng, args.start_noise, 7)
+        self.approach_offset = np.append(jitter, 0.0) + gaussian(rng, args.approach_noise, 3)
+        self.approach_modes = gaussian(rng, args.noise_std / np.sqrt(3), (3, 7))
+        self.above = shifted(self.grasp, *(self.approach_offset + [0.0, 0.0, args.approach]))
         self.lifted = shifted(self.grasp, dz=args.lift)
         above_q = ik(self.above, self.grasp_q, self.f_t_ee)
         descend = line_segment(above_q, self.above, self.grasp, self.f_t_ee, args.speed)
         lift = line_segment(descend[-1], self.grasp, self.lifted, self.f_t_ee, args.speed)
-        self.pick = [("approach", joint_segment(HOME, above_q, args.max_velocity)),
+        self.pick = [("approach", joint_segment(self.start, above_q, args.max_velocity, self.approach_modes)),
                      ("descend", descend),
                      ("grasp", None),                                   # hold while the gripper closes
                      ("lift", lift),
@@ -170,7 +202,7 @@ class Plan:
         self.give_up = [("open", None), ("rise", rise_empty),
                         ("home", joint_segment(rise_empty[-1], HOME, args.max_velocity))]
         for sequence in (self.pick, self.pick + self.put_back, self.pick + self.give_up):
-            last = np.asarray(HOME, dtype=np.float64)
+            last = self.start
             for name, path in sequence:
                 if path is None:
                     continue
@@ -204,7 +236,7 @@ class PickRunner(threading.Thread):
         self.robot, self.gripper, self.plan, self.args, self.control_cpus = robot, gripper, plan, args, control_cpus
         self.lock = threading.Lock()
         self.phase = 0
-        self.reference = np.asarray(HOME, dtype=np.float64)
+        self.reference = plan.start.copy()
         self.grasped = False
         self.max_seen_error = 0.0
         self.error = None
@@ -262,9 +294,9 @@ class PickRunner(threading.Thread):
             os.sched_setaffinity(0, self.control_cpus)
         tracker = None
         try:
-            offset = np.abs(np.asarray(self.robot.state.q) - HOME)
+            offset = np.abs(np.asarray(self.robot.state.q) - self.plan.start)
             if offset.max() > START_TOLERANCE:      # never engage the tracker with a jump in the target
-                raise RuntimeError(f"arm is not at HOME (joint {int(offset.argmax()) + 1} off by "
+                raise RuntimeError(f"arm is not at the episode start (joint {int(offset.argmax()) + 1} off by "
                                    f"{offset.max():.3f} rad); not starting")
             # The tracker takes control when constructed and seeds its target with the current q.
             tracker = JointImpedanceTracker(self.robot, stiffness=REPLAY_STIFFNESS, damping=REPLAY_DAMPING,
@@ -310,10 +342,10 @@ def stop_tracker(tracker):
     return tracker.stop(TorqueStopMotion(ramp_duration=STOP_RAMP_S, max_duration=STOP_MAX_S))
 
 
-def go_home(robot, JointMotion):
-    """Not recorded: franky's position-controlled move to HOME, so every episode starts exactly there."""
+def go_home(robot, JointMotion, q=HOME):
+    """Not recorded: franky's position-controlled move to HOME (or an episode's noisy start)."""
     robot.recover_from_errors()
-    robot.move(JointMotion(HOME))
+    robot.move(JointMotion([float(v) for v in q]))
 
 
 def write_episode(handle, records, runner, args, recorders, holding, failure):
@@ -322,6 +354,8 @@ def write_episode(handle, records, runner, args, recorders, holding, failure):
     base.save_h5(handle, records, dict(
         host=args.host, rate_hz=base.RATE_HZ, control_hz=CONTROL_HZ, task="pick up the block", home_q=HOME,
         grasp_pose=plan.grasp, grasp_q=plan.grasp_q, above_pose=plan.above, lift_pose=plan.lifted,
+        start_q=plan.start, approach_offset_m=plan.approach_offset, approach_noise_modes_rad=plan.approach_modes,
+        start_noise_rad=args.start_noise, approach_noise_m=args.approach_noise, noise_std_rad=args.noise_std,
         cameras=[rec.cam.name for rec in recorders], gripper_closed_on_block=runner.grasped,
         holding_after_lift=holding, max_tracking_error_rad=runner.max_seen_error,
         error="" if failure is None else repr(failure), created_utc=datetime.now(timezone.utc).isoformat()))
@@ -448,6 +482,12 @@ def parse_args(argv=None):
                    help="m above the grasp height to release the block on put-back")
     p.add_argument("--hold", type=float, default=1.0, help="s to hold the block up, recorded")
     p.add_argument("--jitter", type=float, default=0.0, help="random x/y offset (m) of the approach point")
+    p.add_argument("--start-noise", type=float, default=0.02,
+                   help="Gaussian std (rad) of each joint of the episode start around HOME; 0 = HOME")
+    p.add_argument("--approach-noise", type=float, default=0.005,
+                   help="Gaussian std (m) of the x/y/z offset of the point above the block")
+    p.add_argument("--noise-std", type=float, default=0.02,
+                   help="Gaussian scale (rad) of the smooth bend of the approach move, as in data.py waypoints")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--max-velocity", type=float, default=0.4, help="peak joint speed of joint moves (rad/s)")
     p.add_argument("--speed", type=float, default=0.05, help="peak hand speed of the straight lines (m/s)")
@@ -485,6 +525,10 @@ def parse_args(argv=None):
         p.error("--dynamics must be in (0, 1]")
     if args.approach < 0.02 or args.lift < 0.02 or args.jitter < 0:
         p.error("--approach and --lift must be at least 0.02 m, --jitter nonnegative")
+    if min(args.start_noise, args.approach_noise, args.noise_std) < 0:
+        p.error("noise flags must be nonnegative")
+    if 3 * args.start_noise > 0.15 or 3 * args.noise_std > 0.15 or 3 * args.approach_noise > 0.02:
+        p.error("noise too large: 3 std must stay under 0.15 rad (start, bend) and 0.02 m (approach point)")
     if not 0 <= args.place_gap < min(args.approach, args.lift):
         p.error("--place-gap must be nonnegative and below --approach and --lift")
     if args.max_velocity <= 0 or args.speed <= 0 or args.hold < 0:
@@ -550,7 +594,7 @@ def main(argv=None):
         gripper.gripper.open(args.gripper_speed)
         for i, plan in enumerate(plans):
             print(f"episode {i + 1}/{args.episodes}")
-            go_home(robot, JointMotion)
+            go_home(robot, JointMotion, plan.start)
             if world is not None:
                 start = world.block_position()
                 world.reset_block_stats()

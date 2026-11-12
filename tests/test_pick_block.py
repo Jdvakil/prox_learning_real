@@ -58,6 +58,9 @@ class StopMotion:
         self.kwargs = kwargs
 
 
+CLEAN = ["--start-noise", "0", "--approach-noise", "0", "--noise-std", "0"]
+
+
 def fast_args(*extra):
     return pick.parse_args(["--no-cameras", "--lead", "0", "--hold", "0.1", "--speed", "0.5",
                             "--max-velocity", "4", *extra])
@@ -65,7 +68,7 @@ def fast_args(*extra):
 
 class PlanTests(unittest.TestCase):
     def test_plan_is_smooth_vertical_and_returns_home(self):
-        plan = pick.Plan(SAVED, pick.parse_args(["--plan-only"]), np.random.default_rng(0))
+        plan = pick.Plan(SAVED, pick.parse_args(["--plan-only", *CLEAN]), np.random.default_rng(0))
         paths = dict((name, path) for name, path in plan.pick + plan.put_back if path is not None)
         np.testing.assert_allclose(paths["approach"][0], pick.HOME)
         np.testing.assert_allclose(paths["home"][-1], pick.HOME)
@@ -96,6 +99,39 @@ class PlanTests(unittest.TestCase):
         rise_empty = dict(plan.give_up)["rise"]
         self.assertGreater(min(ee(q)[2] for q in rise_empty), grasp_z + 0.06 - 1e-4)
 
+    def test_collection_noise_moves_start_and_approach_but_not_the_grasp(self):
+        args = pick.parse_args(["--plan-only"])                         # default noise
+        plans = [pick.Plan(SAVED, args, np.random.default_rng(seed)) for seed in range(8)]
+        grasp = np.asarray(SAVED["grasp_pose"])[:3, 3]
+        clean = pick.Plan(SAVED, pick.parse_args(["--plan-only", *CLEAN]), np.random.default_rng(0))
+        bends = []
+        for plan in plans:
+            paths = dict((name, path) for name, path in plan.pick + plan.put_back if path is not None)
+            np.testing.assert_allclose(paths["approach"][0], plan.start)
+            self.assertLessEqual(np.abs(plan.start - pick.HOME).max(), 3 * args.start_noise + 1e-12)
+            np.testing.assert_allclose(ee(paths["descend"][-1]), grasp, atol=1e-4)   # grasp stays exact
+            np.testing.assert_allclose(ee(paths["approach"][-1]), plan.above[:3, 3], atol=1e-4)
+            self.assertLessEqual(np.abs(plan.above[:3, 3] - grasp - [0, 0, args.approach]).max(),
+                                 3 * args.approach_noise + 1e-12)
+            np.testing.assert_allclose(paths["home"][-1], pick.HOME)
+            speed = np.abs(np.diff(paths["approach"], axis=0)).max() * pick.CONTROL_HZ
+            self.assertLessEqual(speed, args.max_velocity + 1e-9)
+            for edge in (0, -1):                                        # still starts and ends at rest
+                np.testing.assert_allclose(np.diff(paths["approach"], axis=0)[edge], 0, atol=1e-4)
+            straight = plan.start + pick.min_jerk(len(paths["approach"]))[:, None] * (paths["approach"][-1] - plan.start)
+            bends.append(np.abs(paths["approach"] - straight).max())
+        self.assertGreater(np.std([p.start for p in plans], axis=0).min(), 0)   # episodes differ
+        self.assertGreater(min(bends), 1e-3)                                  # approach is bent
+        np.testing.assert_allclose(clean.start, pick.HOME)
+        again = pick.Plan(SAVED, args, np.random.default_rng(3))
+        np.testing.assert_allclose(dict(again.pick)["approach"], dict(plans[3].pick)["approach"])  # reproducible
+
+    def test_too_much_noise_is_refused(self):
+        for flag, value in (("--start-noise", "0.1"), ("--noise-std", "0.06"), ("--approach-noise", "0.01"),
+                            ("--noise-std", "-1")):
+            with self.assertRaises(SystemExit), patch("sys.stderr"):
+                pick.parse_args(["--plan-only", flag, value])
+
     def test_unreachable_pose_is_rejected_before_moving(self):
         with self.assertRaises(ValueError):          # 1.5 m above the block is out of reach
             pick.Plan(SAVED, pick.parse_args(["--plan-only", "--approach", "1.5"]), np.random.default_rng(0))
@@ -115,6 +151,7 @@ class MockRobotTests(unittest.TestCase):
 
         args = fast_args()
         plan = pick.Plan(SAVED, args, np.random.default_rng(0))
+        robot.state.q = plan.start.copy()
         with tempfile.TemporaryDirectory() as temp, \
                 patch.dict(sys.modules, {"franky": SimpleNamespace(JointImpedanceTracker=Tracker,
                                                                    TorqueStopMotion=StopMotion)}), \
@@ -160,7 +197,7 @@ class MockRobotTests(unittest.TestCase):
             runner = pick.PickRunner(robot, None, plan, fast_args())
             runner.start()
             runner.join(2)
-        self.assertIn("not at HOME", str(runner.error))
+        self.assertIn("not at the episode start", str(runner.error))
         self.assertEqual(engaged, [])
 
     def test_empty_gripper_is_a_failed_episode_and_arm_still_goes_home(self):
