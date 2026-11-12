@@ -97,7 +97,8 @@ def export_pc_act(source, destination, background_data):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("kind",choices=["act","pc-act"])
+    p.add_argument("kind",choices=["act","pc-act","pick"])
+    p.add_argument("--checkpoint",default="policy_best.ckpt",help="pick: policy file in the run directory")
     p.add_argument("--source",type=Path,help="training run directory (pc-act default: training_runs/pc_act_test_20_scratch_20261103)")
     p.add_argument("--destination",type=Path,help="default models/act_test_20 or models/pc_act_test_20")
     p.add_argument("--data-dir",type=Path,help="act: converted dataset with convert_meta.json (image size)")
@@ -106,6 +107,10 @@ def main(argv=None):
     p.add_argument("--background-data",type=Path,default=ROOT/"recordings/act_test_20",
                    help="pc-act: recorded episodes for the proximity guard background")
     args=p.parse_args(argv)
+    if args.kind=="pick":
+        from .eval_pick import export_bundle
+        if args.source is None or args.destination is None:p.error("pick export needs --source and --destination")
+        return export_bundle(args.source,args.destination,args.checkpoint,args.data_dir)
     if args.kind=="act":
         if args.source is None:p.error("act export needs --source")
         export(args.source,args.destination or ROOT/"models/act_test_20",args.data_dir,args.image_height,args.image_width)

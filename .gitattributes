@@ -1,3 +1,4 @@
 *.h5 filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.ckpt filter=lfs diff=lfs merge=lfs -text
+sim_assets/franka_skin/assets/** filter=lfs diff=lfs merge=lfs -text

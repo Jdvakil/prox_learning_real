@@ -8,7 +8,7 @@ outside a tracker it holds its last position. Gripper commands drive the hand's 
 with the grasp force as its force limit and report success with libfranka's epsilon rule.
 
 Poses come from the same FR3 DH kinematics as pick_block.py, so logged O_T_EE uses the real
-robot's convention. Needs mujoco and the parent repo's assets/ (not on the robot PC).
+robot's convention. Needs mujoco and the model copy in sim_assets/ (or the parent repo's assets/).
 """
 
 import sys
@@ -19,7 +19,11 @@ from pathlib import Path
 
 import numpy as np
 
-MODEL = Path(__file__).resolve().parents[3] / "assets/robots/franka_skin/model_hybrid_franka_hand.xml"
+# A copy of the parent repo's model ships in sim_assets/ so the robot PC can run --sim; the parent
+# repo's own file is used when this copy is missing.
+MODEL = Path(__file__).resolve().parents[1] / "sim_assets/franka_skin/model_hybrid_franka_hand.xml"
+if not MODEL.exists():
+    MODEL = Path(__file__).resolve().parents[3] / "assets/robots/franka_skin/model_hybrid_franka_hand.xml"
 TIMESTEP = 0.001
 HOLD_STIFFNESS = np.array([3000, 3000, 3000, 2500, 1500, 1000, 500.0])
 HOLD_DAMPING = np.array([100, 100, 100, 80, 50, 40, 20.0])
@@ -41,7 +45,7 @@ class World(threading.Thread):
 
         self.mujoco = mujoco
         if not MODEL.exists():
-            raise SystemExit(f"--sim needs the parent repo's MuJoCo model: {MODEL} missing")
+            raise SystemExit(f"--sim needs the MuJoCo model: {MODEL} missing (git lfs pull?)")
         spec = mujoco.MjSpec.from_file(str(MODEL))
         spec.option.timestep = TIMESTEP
         spec.option.noslip_iterations = 10         # rigid-finger grip; soft contacts creep otherwise
@@ -96,6 +100,16 @@ class World(threading.Thread):
         self.stop_event = threading.Event()
         self.viewer = viewer
         self.hand_body = m.body("fr3_hand").id
+        self.recording = None             # list of (sim time, qpos) while record_start() is on
+
+    def record_start(self):
+        with self.lock:
+            self.recording = []
+
+    def record_stop(self):
+        with self.lock:
+            out, self.recording = self.recording, None
+        return out or []
 
     def set_width(self, width):
         """Finger actuator target: force = 4 - ctrl / 63.75 - 100 * opening per finger."""
@@ -142,6 +156,10 @@ class World(threading.Thread):
             with self.lock:
                 for _ in range(min(50, int(behind / TIMESTEP) + 1)):
                     self.step()
+                    # 10 Hz state log for render_rollout(); cheap copy of qpos only.
+                    if self.recording is not None and (not self.recording or
+                                                       self.data.time - self.recording[-1][0] >= 0.1 - 1e-9):
+                        self.recording.append((self.data.time, self.data.qpos.copy()))
             if viewer is not None and self.data.time % 0.03 < 0.002:
                 viewer.sync()
         if viewer is not None:
@@ -343,3 +361,39 @@ def install(saved, home, block, viewer=False):
     world.start()
     sys.modules["franky"] = fake_franky(world, f_t_ee)
     return world
+
+
+def render_rollout(saved, home, block, recording, size=(320, 240)):
+    """Render a World.record_stop() log offscreen: side view | top view, uint8 RGB frames.
+
+    Needs an offscreen GL (MUJOCO_GL=egl on a desktop GPU). Rebuilds the same scene, so the
+    block, table and arm are exactly where the evaluation had them.
+    """
+    import mujoco
+    from .pick_block import flange
+
+    grasp_pose, grasp_q = np.asarray(saved["grasp_pose"]), np.asarray(saved["grasp_q"])
+    world = World(grasp_pose, grasp_q, np.linalg.inv(flange(grasp_q)) @ grasp_pose, block, home)
+    model, data = world.model, world.data
+    width, height = size
+    model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
+    model.vis.global_.offheight = max(model.vis.global_.offheight, height)
+    renderer = mujoco.Renderer(model, height, width)
+    target = grasp_pose[:3, 3] + [0.0, 0.0, 0.15]
+    views = []
+    for azimuth, elevation, distance in ((135.0, -20.0, 1.3), (90.0, -89.0, 1.4)):
+        cam = mujoco.MjvCamera()
+        cam.lookat[:] = target
+        cam.azimuth, cam.elevation, cam.distance = azimuth, elevation, distance
+        views.append(cam)
+    frames = []
+    for _, qpos in recording:
+        data.qpos[:] = qpos
+        mujoco.mj_forward(model, data)
+        pair = []
+        for cam in views:
+            renderer.update_scene(data, camera=cam)
+            pair.append(renderer.render().copy())
+        frames.append(np.hstack(pair))
+    renderer.close()
+    return frames

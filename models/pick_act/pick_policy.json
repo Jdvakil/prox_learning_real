@@ -1,0 +1,23 @@
+{
+  "kind": "act",
+  "source": "/home/jaydv/code/prox_learning/submodules/act/ckpts/real_pick_20261112/real_pick_20261112_ACT_s0_bs8_cs50_lr1e-5_e2000",
+  "checkpoint": "policy_best.ckpt",
+  "camera_names": [
+    "exo_camera_1",
+    "wrist_camera"
+  ],
+  "image_h": 240,
+  "image_w": 320,
+  "nheads": 8,
+  "enc_layers": 4,
+  "dec_layers": 7,
+  "backbone": "resnet18",
+  "files": {
+    "policy": {
+      "name": "policy_best.ckpt",
+      "sha256": "0ee440bca8202fc023564d014f6b8f0ff4cf28f10b2518ba9daa2566c0091fd6"
+    }
+  },
+  "recipe": "submodules/act/imitate_episodes.py via scripts/exp/train_real_pick.sh (sim hidden-hazard recipe)",
+  "exported_utc": "2026-11-12T09:44:07.221069+00:00"
+}

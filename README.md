@@ -25,8 +25,8 @@ python data.py dashboard    offline HTML dashboard of recorded rows -> viz/
 python data.py analyze      audit an A -> B batch (metrics, plots, report) -> act_20_analysis/
 
 python model.py train       train PC-ACT on recorded episodes (--detach: background job)
-python model.py eval        eval act | eval pc-act  (--check-model, --offline-row, or live)
-python model.py export      export act | export pc-act: trained run -> models/
+python model.py eval        eval act | pc-act | pick  (pick: block pick with the gripper)
+python model.py export      export act | pc-act | pick: trained run -> models/
 python model.py wandb-sync  upload a finished run's metrics to W&B
 
 python utils.py check       Python packages + deployed model files, no hardware
@@ -340,7 +340,8 @@ the grasp pose stays exact. Each row stores `start_q`, `approach_offset_m`,
 noisy episodes lifted the block 98-99 mm (max tracking error 0.013 rad, same as without noise).
 
 `--sim` runs the same script against `prox_real/sim_franky.py`: a fake `franky` backed by MuJoCo
-physics in real time (the parent repo's FR3 + hand model, a table and a cube centred at the
+physics in real time (the parent repo's FR3 + hand model, copied into `sim_assets/franka_skin/`
+so it also runs on the lab PC; a table and a cube centred at the
 saved grasp pose, joint impedance with gravity compensation, force-limited fingers). No sensors
 or cameras; it prints how far the block rose and where it was put back. `--sim-block` sets the
 cube size (0 = no block, to exercise the failure path), `--sim-view` opens the MuJoCo viewer.
@@ -383,6 +384,47 @@ python data.py live --robot --gripper              # also joints and gripper, re
 - **Cameras:** both at 30 fps with no dropped frames.
 - **Proximity sensors:** none. All 40 were silent for the whole row (`--allow-missing`), so its
   proximity channels are empty. Check the dashboard's sensor count before collecting the batch.
+
+2026-11-12: five noisy batches (`recordings/pick_20261112T*`, start σ 0.03 rad, approach σ
+0.006 m, bend σ 0.03 rad):
+- **Rows:** 48 recorded, 46 clean. Each lifted 95 mm with a 23.6–24.2 mm grip and a max tracking
+  error of 0.0091–0.0098 rad. No dropped camera frames.
+- **Failures:** `011644Z/0008`, where the wrist camera stopped (USB) and nothing was recorded; and
+  `014342Z/0014`, where the gripper closed to 0 mm. The hand reached the grasp pose, and the wrist
+  camera shows the block had drifted off its spot after 14 put-backs.
+- **Repeated noise:** every batch used `--seed 0`, so the 46 clean rows hold only 20 distinct
+  noise draws. Give each batch its own `--seed`.
+- **Grasp offset:** at the grasp the hand is about −2 mm x, −1.3 mm y and −3 mm z off the saved
+  pose in every episode. This is the joint 2 sag from the hand load missing in Desk.
+- **Proximity:** 36 of 40 sensors return; `link5_front_sensor_0..3` are silent.
+- **Bad config:** `011644Z/config.json` is not valid JSON (stray text at line 36). The h5
+  attributes still hold its noise draws.
+
+2026-11-12 work log, from the recordings to models ready for the arm:
+1. **Reviewed the recordings:** results above.
+2. **Converted to ACT format:** with the parent converter (`--with_proximity --prox_pool min`,
+   320x240) into `act_style_data/real_pick_20261112/act`. This is the format the sim experiments
+   train on.
+3. **First training attempt, discarded:** `model.py train-act-style` (40 full-pass epochs, skin
+   encoder from random weights) was not the sim recipe. It was stopped and is not used for results.
+4. **Retrained with the sim recipe:**
+   - Task `real_pick_20261112` added to `submodules/act/constants.py`.
+   - `scripts/exp/train_real_pick.sh` is a copy of `train_pc_shelf_blind.sh`.
+   - `EPOCHS=2000 EXP=ACT` and `EXP=PACT_READOUT`.
+   - Launch arguments and skin config are identical to the `pc_shelf_blind` runs except for names.
+   - Actions are 7 joint targets plus the gripper command; the state is 7 joints plus 2 fingers.
+5. **Built the pick evaluator** (`model.py export pick`, `model.py eval pick`, section "Evaluate
+   the pick policies on the arm"): HOME start, gripper, safety stops and the scripted put-back. The
+   older evaluators were arm-only and built for the A -> B task.
+6. **Checked the evaluator against training:**
+   - Inputs rebuilt from the raw rows equal the converted training files on all 46 rows.
+   - The bundled model matches the parent `ACTPolicy` to within 4e-4 rad.
+   - Final models: open-loop gripper agreement is 99.6-99.7% on 46 rows, and sim closed loop gave
+     ACT 2/2 and PC-ACT 2/2.
+7. **Tests:** `tests/test_eval_pick.py` adds 14 tests; 94 pass in total.
+8. **Dashboard** (a claude.ai artifact): it shows the recordings, a video player, cumulative growth,
+   a joint overlay and live training curves. A background agent re-uploads the curves every 100
+   epochs, because 5 epochs take 2-3 s with this recipe.
 
 ## Waypoint recorder
 
@@ -726,6 +768,155 @@ from an ACT baseline initialized with an ImageNet backbone, so it is not a contr
 modality-only comparison. Add avoidance/correction demonstrations or another explicit
 avoidance training objective before claiming learned avoidance behavior.
 
+### ACT and PC-ACT on converted pick data
+
+**Use the sim recipe for results.** The parent repo's `scripts/exp/train_real_pick.sh` trains the
+converted data with `submodules/act/imitate_episodes.py`, exactly as the sim hidden-hazard
+experiments do (task `real_pick_20261112` in `submodules/act/constants.py`):
+
+```bash
+cd /home/jaydv/code/prox_learning          # mlspaces env
+EPOCHS=2000 EXP=ACT          ./scripts/exp/train_real_pick.sh   # -> submodules/act/ckpts/real_pick_20261112/<run>/
+EPOCHS=2000 EXP=PACT_READOUT ./scripts/exp/train_real_pick.sh
+```
+
+That recipe uses batch 8, chunk 50, lr 1e-5 and KL weight 10. An epoch samples one random frame
+per training episode, and the split is a random 80/20 by episode. PC-ACT fine-tunes the pretrained
+corridor_v5 surface encoder. Each run takes about 1 h for 2000 epochs when both share the GPU.
+`model.py train-act-style` (below) is a separate standalone trainer: it trains the encoder from
+random weights and uses full-pass epochs, so its numbers do not compare to the sim runs.
+
+`python model.py train-act-style` trains either arm on the ACT-style HDF5s that the parent repo's
+converter writes. Both arms run the same code, split, normalization and schedule, so the only
+difference is the proximity input. `--arm act` uses cameras and joints. `--arm pc-act` adds the
+40-sensor skin through the surface encoder: a conv stem per 8x8 frame, then a temporal
+transformer over eight causal 15 Hz snapshots, giving 40 x 128 readout tokens. The encoder is
+trained end to end from random weights.
+
+```bash
+# Parent repo root: stage the batch rows flat, then convert (cameras 240x320, proximity min-pooled)
+mkdir -p act_style_data/real_pick_20261112/rows
+for ep in submodules/prox_learning_real/recordings/pick_*/episode_*; do
+  b=$(basename $(dirname $ep)); ln -sfn $(realpath $ep) act_style_data/real_pick_20261112/rows/${b#pick_}_$(basename $ep)
+done
+python -m scripts.convert_pact_place_to_act --src act_style_data/real_pick_20261112/rows \
+  --dst act_style_data/real_pick_20261112/act --with_proximity --prox_pool min
+
+# This repo: train both arms (they fit on the 24 GB GPU together, about 2 min per epoch each)
+P=../../act_style_data/real_pick_20261112
+python model.py train-act-style --arm act    --data $P/act --rows $P/rows --run-dir training_runs/pick_act_20261112 --epochs 40
+python model.py train-act-style --arm pc-act --data $P/act --rows $P/rows --run-dir training_runs/pick_pcact_20261112 --epochs 40
+```
+
+An epoch is one pass over every training frame, in batches of 16 (562 steps for the 2026-11-12
+data). The 8 validation episodes come from 3 held-out noise draws: every episode that shares a
+start pose with one of them is also held out, so validation start poses never appear in training.
+Normalization statistics come from the training episodes only. Actions are the 7 joint
+references plus the gripper command; the state is the 7 joints plus the two finger positions.
+Each run writes `metrics.jsonl` (one line per epoch: train loss/L1/KL, validation L1,
+validation arm error in rad, validation gripper error), `progress.json`, `dataset_stats.npz`
+and `policy_best.ckpt` (PC-ACT also writes `prox_encoder_best.pt`, from the same epoch). Low
+validation L1 is offline imitation error, not task success on the robot.
+
+### Evaluate the pick policies on the arm (gripper included)
+
+`python model.py eval pick` runs an ACT or PC-ACT pick policy trained with the sim recipe above.
+It also commands the gripper. The older `eval act` / `eval pc-act` evaluators are arm-only and are
+built for the A -> B waypoints task, so they can't run these policies.
+
+```bash
+# Desktop, training env (the run's dataset_stats.pkl is a numpy 2 pickle): make portable bundles
+C=../act/ckpts/real_pick_20261112; D=../../act_style_data/real_pick_20261112/act
+python model.py export pick --source $C/real_pick_20261112_ACT_s0_bs8_cs50_lr1e-5_e2000 \
+  --destination models/pick_act --data-dir $D
+python model.py export pick --source $C/real_pick_20261112_PACT_READOUT_s0_bs8_cs50_lr1e-5_e2000 \
+  --destination models/pick_pcact --data-dir $D
+
+# Lab PC, no hardware: load check, open-loop check on recorded rows, closed loop in MuJoCo
+python model.py eval pick --model models/pick_act --check-model
+python model.py eval pick --model models/pick_act --offline recordings/pick_20261112T022139Z
+python model.py eval pick --model models/pick_act --sim --trials 2
+
+# Robot: put the block on its spot (pick_pose.json), FCI on, clear workspace
+python model.py eval pick --model models/pick_act   --trials 3 --wrist-serial 836612071883 --exo-serial 943222071556
+python model.py eval pick --model models/pick_pcact --trials 3 --wrist-serial 836612071883 --exo-serial 943222071556
+python model.py eval pick --home        # after an abort: position-controlled move HOME, gripper untouched
+```
+
+**No GPU needed.** With no CUDA the evaluator runs on CPU (or force it with `--device cpu`). One
+query takes about 0.2 s on CPU (Threadripper 2970WX). Each chunk is timed from the moment its
+observation was taken, so that delay only skips the chunk's first 3 steps. CPU-only sim runs passed
+for both models (ACT: block rose 96 mm; PC-ACT: 95 mm). Don't use `--temporal-agg` on CPU: it
+queries every 67 ms tick and can't keep up.
+
+**Inputs** are built exactly as training saw them. On all 46 rows, inputs rebuilt from the raw
+recordings match the converted training files exactly (zero difference in joints, skin, images
+and actions):
+- The 7 measured joints plus both fingers at half the gripper width.
+- Both cameras resized to 320x240 with `INTER_AREA`.
+- PC-ACT: the newest packet of every skin sensor. It uses block 1 in metres, with no return = 4 m,
+  kept as the last 8 ticks at 15 Hz and encoded with `encode_pooled_history`, as in the training loader.
+
+The bundled model matches the parent repo's training-time `ACTPolicy` to within 4e-4 rad on the
+same inputs.
+
+**Control** follows the sim protocol:
+- The policy runs at 15 Hz and plays each 50-step chunk before it queries again
+  (`--exec-horizon N` and `--temporal-agg` change this).
+- Targets are interpolated to 100 Hz for the joint impedance tracker and rate limited to 0.5 rad/s.
+- A gripper output above 0.5 closes the hand with the collection grasp (20 N, any width); below
+  0.5 opens it.
+
+**Every trial starts at HOME** with the gripper open. Any of these stops the arm with the short
+damping stop and ends the batch:
+- a target within 0.05 rad of a joint limit;
+- the hand more than `--floor-margin` (15 mm) below the saved grasp height;
+- the hand outside the HOME-to-grasp box plus `--box-margin` (10 cm);
+- a policy target more than 0.15 rad from the measured arm;
+- tracking error above `--max-error` (0.10 rad);
+- no new chunk for 1 s.
+
+After an abort nothing scripted moves the arm. Run `--home` once you have checked it.
+
+**A trial ends early** once the block has been held 8 cm above the grasp height for 1 s;
+otherwise it ends after `--duration` (20 s). Success = gripper holding (width above 3 mm) and
+lifted. The script then puts the block back with the `data.py pick` segments (`--no-put-back`
+skips this). Results go to `evaluations/pick_<model>_<utc>/trial_NNNN/`: `rollout.h5` holds
+joints, references, policy actions, chunks and latency; `result.json` holds success, gripper
+events, depth reached and tracking error. `--save-images` also stores the policy's RGB input.
+
+Final models, 2026-11-12. The bundles are `models/pick_act` (ACT, best validation loss 0.0477 at
+epoch 1984) and `models/pick_pcact` (PC-ACT, 0.0458 at epoch 1968):
+- **Matches training:** the bundled models are within 1e-3 rad of the parent repo's
+  training-time `ACTPolicy` on the same inputs.
+- **Open loop on all 46 rows** (`--offline`): the gripper output agrees with the recorded command
+  on 99.6% (ACT) and 99.7% (PC-ACT) of ticks. Every row closes, on average within a quarter of a
+  tick of the recorded close. The mean arm error over a chunk is 0.016 rad (ACT) and 0.015 rad
+  (PC-ACT).
+- **Closed loop in sim** (`--sim`, 24 mm block, replayed camera video): ACT 2/2 and PC-ACT 2/2
+  grasped, lifted 95-103 mm, held, and the block was put back within 7.5 mm.
+  - The hand never went more than 2.6 mm below the saved grasp height (the floor stop is at 15 mm).
+  - Max tracking error was 0.037 rad.
+  - The epoch-500 checkpoints had reached 10 mm below grasp height; the final ones don't.
+- The 80/20 split is random, so validation episodes can share their noise draw with training
+  episodes (see the data notes), and the validation loss is somewhat optimistic.
+
+**Does PC-ACT use the skin?** On the robot it gets all 40 sensors live (the last 8 ticks,
+through the fine-tuned encoder). On 770 chunks from 16 recorded episodes:
+- Clearing the skin to "no return" moves its arm prediction by 0.0032 rad on average (at most 0.016).
+- Its error against the recording goes from 0.0087 to 0.0090 rad.
+- Swapping in another episode's skin moves the prediction by 0.0014 rad.
+
+So the skin is wired in and has a small effect, and the actions come almost entirely from cameras
+and joints. That is expected with no obstacles: the skin sees nearly the same table and block in
+every episode. The `--sim` checks run PC-ACT with no skin at all (the twin has no sensors).
+
+`--sim-video` renders each sim trial to `trial_NNNN/sim.mp4` (side | top view, offscreen through
+`MUJOCO_GL=egl`). `sim_state.npz` keeps the 10 Hz MuJoCo state, so a trial can be rendered again later.
+
+The pick has no obstacles, so PC-ACT and ACT should behave about the same here. This is a test
+of the pipeline and the policy, not of the skin.
+
 Cameras: on the robot PC a D435 gives no frames on a fresh start until it is USB power-cycled
 (2026-10-28: `cameras.py` and `record_dataset.py` both failed with "no frames" / "Frame didn't
 arrive" until `cameras.py --reset`). `data.py record`, `data.py waypoints` and `data.py replay` therefore
@@ -770,7 +961,8 @@ python -m pip install --no-build-isolation ./submodules/franky
 Hardware-free checks: `python utils.py check` (`--offline-only` before the camera and robot
 drivers are installed) and `python model.py eval act --check-model --device cpu`, which loads
 the checkpoint and predicts a finite (50, 8) action chunk from dummy input without moving the
-robot. To deploy a newly trained ACT model, run `python model.py export act --source <run dir>
+robot. The pick policies have the same check: `python model.py eval pick --model models/pick_act
+--check-model --device cpu` (and `models/pick_pcact`). To deploy a newly trained ACT model, run `python model.py export act --source <run dir>
 --data-dir <converted dataset> --destination models/<name>` in the training environment (or
 `--image-height` / `--image-width` instead of `--data-dir`) and copy the whole model folder;
 `--ckpt-dir models/<name>` selects it at evaluation.

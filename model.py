@@ -5,8 +5,9 @@ from prox_real.cli import run
 
 COMMANDS = {
     "train": ("train_pc_act:main", "train PC-ACT on recorded episodes (--detach to run in the background)"),
-    "eval": ("evaluate:main", "evaluate a policy: eval act|pc-act [--check-model | --offline-row ROW | live]"),
-    "export": ("export_model:main", "copy a trained run into models/: export act|pc-act --source RUN"),
+    "train-act-style": ("train_act_style:main", "train ACT or PC-ACT on converted ACT-style HDF5s (--arm act|pc-act)"),
+    "eval": ("evaluate:main", "evaluate a policy: eval act|pc-act|pick (pick: gripper included, see README)"),
+    "export": ("export_model:main", "copy a trained run into models/: export act|pc-act|pick --source RUN"),
     "wandb-sync": ("pc_act_wandb:main", "upload a finished run's local metrics to W&B"),
 }
 

@@ -1,12 +1,12 @@
 """Pick the ACT or PC-ACT evaluator: `python model.py eval act|pc-act [options]`."""
 import sys
 
-KINDS = {"act": "eval_act_real", "pc-act": "eval_pc_act_real"}
+KINDS = {"act": "eval_act_real", "pc-act": "eval_pc_act_real", "pick": "eval_pick"}
 
 
 def main(argv):
     if not argv or argv[0] not in KINDS:
-        raise SystemExit("usage: python model.py eval {act,pc-act} [options]   (add -h for the evaluator's options)")
+        raise SystemExit("usage: python model.py eval {act,pc-act,pick} [options]   (add -h for the evaluator's options)")
     import importlib
 
     sys.argv[0] = f"model.py eval {argv[0]}"

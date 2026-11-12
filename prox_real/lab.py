@@ -7,7 +7,9 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = {"act_test_20": ["policy_best.ckpt", "dataset_stats.npz", "training_config.json", "image_metadata.json"],
-          "pc_act_test_20": ["policy_best.ckpt", "prox_encoder_best.pt", "policy_pair.json", "guard_baseline.npz"]}
+          "pc_act_test_20": ["policy_best.ckpt", "prox_encoder_best.pt", "policy_pair.json", "guard_baseline.npz"],
+          "pick_act": ["policy_best.ckpt", "dataset_stats.npz", "pick_policy.json"],
+          "pick_pcact": ["policy_best.ckpt", "prox_encoder_best.pt", "prox_config.json", "dataset_stats.npz", "pick_policy.json"]}
 
 
 def check(argv=None):
@@ -45,8 +47,8 @@ def bundle(argv=None):
     args=p.parse_args(argv)
     if args.output.exists():raise FileExistsError(args.output)
     args.output.parent.mkdir(parents=True,exist_ok=True)
-    files=[ROOT/name for name in ["data.py","model.py","utils.py","README.md"]]+list(ROOT.glob("requirements-*.txt"))
-    for directory in ["prox_real","act_model","models","submodules/franky"]:
+    files=[ROOT/name for name in ["data.py","model.py","utils.py","README.md","pick_pose.json"]]+list(ROOT.glob("requirements-*.txt"))
+    for directory in ["prox_real","act_model","models","sim_assets","submodules/franky"]:
         files += [path for path in (ROOT/directory).rglob("*") if path.is_file()
                   and not any(part in {".git","__pycache__",".pytest_cache","build","dist"} for part in path.relative_to(ROOT).parts)
                   and path.suffix not in {".pyc",".so"}]
