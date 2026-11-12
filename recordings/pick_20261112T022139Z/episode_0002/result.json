@@ -1,0 +1,8 @@
+{
+  "clean_success": true,
+  "holding_after_lift": true,
+  "gripper_closed_on_block": true,
+  "gripper_width_m": 0.024207359179854393,
+  "max_tracking_error_rad": 0.009387346149695941,
+  "error": ""
+}
