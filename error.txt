@@ -1,29 +1,21 @@
-saved 234 ticks: recordings/pick_20261111T223727Z/episode_0000  (holding the block, width 24.2 mm)
-putting the block back (not recorded)
-  lower
-  open
-  rise
-  home
-episode 2/10
-  approach
+(franky) jaydv@verstappen:~/prox_learning_real$ python model.py eval act   --wrist-serial 836612071883 --exo-serial 943222071556   --output eval_rollouts/real_trial_03
+robot control on CPU [7, 15], recording on the other 14
+number of parameters: 83.89M
+ACT: state=9, action=8, chunk=50, query_every=50, cameras=['exo_camera_1', 'wrist_camera'], RGB=320x240, device=cpu
+resetting cameras 836612071883, 943222071556
+Moving to training start A, outside rollout.
+saved eval_rollouts/real_trial_03; success=False
 Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 262, in run
-    self.run_segments(tracker, self.plan.pick, recorded=True)
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 232, in run_segments
-    self.track(tracker, q, v)
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 220, in track
-    raise RuntimeError(f"tracking error {error:.3f} rad > {self.args.max_error}")
-RuntimeError: tracking error 0.204 rad > 0.15
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/home/jaydv/prox_learning_real/data.py", line 19, in <module>
-    sys.exit(run("data.py", __doc__.split(".")[0] + ".", COMMANDS))
+  File "/home/jaydv/prox_learning_real/model.py", line 15, in <module>
+    sys.exit(run("model.py", __doc__.split(".")[0] + ".", COMMANDS))
   File "/home/jaydv/prox_learning_real/prox_real/cli.py", line 25, in run
     return getattr(importlib.import_module(f"prox_real.{module}"), function)(rest)
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 525, in main
-    runner, holding = collect_episode(robot, gripper, listener, cameras, plan, args,
-  File "/home/jaydv/prox_learning_real/prox_real/pick_block.py", line 359, in collect_episode
-    raise RuntimeError(f"pick motion failed: {runner.error}") from runner.error
-RuntimeError: pick motion failed: tracking error 0.204 rad > 0.15
+  File "/home/jaydv/prox_learning_real/prox_real/evaluate.py", line 13, in main
+    return importlib.import_module(f"prox_real.{KINDS[argv[0]]}").main(argv[1:])
+  File "/home/jaydv/prox_learning_real/prox_real/eval_act_real.py", line 608, in main
+    else:live(args,policy,output,control_cpus)
+  File "/home/jaydv/prox_learning_real/prox_real/eval_act_real.py", line 433, in live
+    checked_target(initial_chunk[0], initial, *bounds, args.max_target_delta)
+  File "/home/jaydv/prox_learning_real/prox_real/eval_act_real.py", line 230, in checked_target
+    raise ValueError("predicted target is too far from measured arm position")
+ValueError: predicted target is too far from measured arm position
