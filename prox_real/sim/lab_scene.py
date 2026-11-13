@@ -17,8 +17,11 @@ import mujoco
 import numpy as np
 
 REAL = Path(__file__).resolve().parents[2]
-# prox_learning_real is checked out at prox_learning/submodules/prox_learning_real.
-DEFAULT_MODEL = REAL.parents[1] / "assets/robots/franka_skin/model_hybrid_franka_hand.xml"
+# The copy in sim_assets/ lets the lab PC run without the parent repo; otherwise use the parent
+# repo's file (prox_learning_real is checked out at prox_learning/submodules/prox_learning_real).
+DEFAULT_MODEL = REAL / "sim_assets/franka_skin/model_hybrid_franka_hand.xml"
+if not DEFAULT_MODEL.exists():
+    DEFAULT_MODEL = REAL.parents[1] / "assets/robots/franka_skin/model_hybrid_franka_hand.xml"
 
 LAB = {
     "table_top_z": -0.045,                       # wood top; the base stands on 45 mm rails
