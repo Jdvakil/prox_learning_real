@@ -1,0 +1,18 @@
+{
+  "success": false,
+  "end": "aborted",
+  "error": "RuntimeError('servo stopped: tracking error 0.102 rad > 0.1')",
+  "servo_error": "RuntimeError('tracking error 0.102 rad > 0.1')",
+  "holding": false,
+  "final_width_m": 0.08095386624336243,
+  "max_lift_m": 0.2745639409577881,
+  "min_hand_z_above_grasp_m": 0.21942140110904151,
+  "max_tracking_error_rad": 0.10163671267606658,
+  "duration_s": 1.6003814010036876,
+  "gripper_events": [],
+  "queries": 1,
+  "mean_latency_s": 0.15861943500931375,
+  "policy": "act",
+  "exec_horizon": 50,
+  "temporal_agg": false
+}

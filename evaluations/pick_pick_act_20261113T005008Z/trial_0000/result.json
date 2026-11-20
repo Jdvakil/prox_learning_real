@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "end": "held",
+  "error": "",
+  "servo_error": "",
+  "holding": true,
+  "final_width_m": 0.08095058053731918,
+  "max_lift_m": 0.2982706842579598,
+  "min_hand_z_above_grasp_m": -0.007086451168776667,
+  "max_tracking_error_rad": 0.03447112173967659,
+  "duration_s": 14.667044246001751,
+  "gripper_events": [
+    {
+      "command": "close",
+      "t": 6.667033058998641,
+      "ok": true
+    }
+  ],
+  "queries": 5,
+  "mean_latency_s": 0.15139291339728517,
+  "policy": "act",
+  "exec_horizon": 50,
+  "temporal_agg": false
+}
