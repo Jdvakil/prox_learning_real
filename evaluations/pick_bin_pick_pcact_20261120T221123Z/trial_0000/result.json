@@ -1,0 +1,33 @@
+{
+  "success": false,
+  "end": "aborted",
+  "error": "RuntimeError('servo stopped: target hand height -0.006 m is below the floor -0.006 m')",
+  "servo_error": "RuntimeError('target hand height -0.006 m is below the floor -0.006 m')",
+  "holding": false,
+  "final_width_m": 0.025153616443276405,
+  "max_lift_m": 0.28435293882212165,
+  "min_hand_z_above_grasp_m": -0.014015102717184952,
+  "max_tracking_error_rad": 0.028062162660680845,
+  "duration_s": 12.733703857986256,
+  "gripper_events": [
+    {
+      "command": "close",
+      "t": 10.00035889307037
+    }
+  ],
+  "queries": 4,
+  "mean_latency_s": 0.19491938524879515,
+  "policy": "pc-act",
+  "exec_horizon": 50,
+  "temporal_agg": false
+}
+(franky) jaydv@verstappen:~/prox_learning_real$ python model.py eval pick --model models/bin_pick_pcact --trials 1 --device cpu --wrist-serial 836612071883 --exo-serial 943222071556
+number of parameters: 83.97M
+pc-act: chunk 50, exec horizon 50, cameras ['exo_camera_1', 'wrist_camera'], 320x240, device cpu
+robot control on CPU [7, 15], recording on the other 14
+resetting cameras 836612071883, 943222071556
+live dashboard: http://localhost:8050  (or http://verstappen:8050)
+trial 1/1: home, gripper open (not part of the policy)
+{"success": false, "end": "aborted", "error": "RuntimeError('servo stopped: target hand height -0.006 m is below the floor -0.006 m')", "servo_error": "RuntimeError('target hand height -0.006 m is below the floor -0.006 m')", "holding": false, "final_width_m": 0.025153616443276405, "max_lift_m": 0.28435293882212165, "min_hand_z_above_grasp_m": -0.014015102717184952, "max_tracking_error_rad": 0.028062162660680845, "duration_s": 12.733703857986256, "queries": 4, "mean_latency_s": 0.19491938524879515, "policy": "pc-act", "exec_horizon": 50, "temporal_agg": false}
+aborted: the arm stopped where it was. Check it, then home it with python model.py eval pick --model <bundle> --home
+summary {"trials": 1, "successes": 0, "aborted": 1, "output": "/home/jaydv/prox_learning_real/evaluations/pick_bin_pick_pcact_20261120T221123Z"}
