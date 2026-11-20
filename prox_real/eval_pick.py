@@ -20,10 +20,13 @@ interpolated to 100 Hz for franky's joint impedance tracker and rate limited. A 
 above 0.5 closes the hand with the collection grasp (20 N, any width), below 0.5 opens it.
 
 Every trial starts at HOME with the gripper open, like the recorded episodes. The arm stops
-(short damping stop) when the target leaves the joint limits, the hand would go more than
---floor-margin below the saved grasp height or leave the workspace box, a joint lags its
+(short damping stop) when the target leaves the joint limits or the workspace box, a joint lags its
 reference by --max-error, the policy stalls, or --duration runs out. A trial ends early once
-the hand holds the block --lift-success above the grasp height for --hold-success s. Success =
+the hand holds the block --lift-success above the grasp height for --hold-success s.
+A target that would put the hand more than --floor-margin below the saved grasp height is not
+sent: the arm holds its last safe reference until the policy's targets come back above the
+floor (soft floor; the result counts these 100 Hz steps in floor_hold_steps). --hard-floor
+aborts instead, as before 2026-11-20. Success =
 holding the block (width above --min-width) and lifted. Then, not part of the policy, the
 script puts the block back on its spot the way data.py pick does (or, with nothing in the
 hand, opens, rises and goes home), so the next trial finds it there.
@@ -318,6 +321,10 @@ def offline(policy, rows, exec_horizon):
 
 
 # ---- online ----------------------------------------------------------------------------------
+class FloorError(RuntimeError):
+    """A target below the floor: the servo holds (soft floor) unless --hard-floor."""
+
+
 class Envelope:
     """Joint limits, a floor under the grasp height and a workspace box for the hand."""
 
@@ -340,7 +347,7 @@ class Envelope:
             raise RuntimeError(f"target joint {j + 1} within 0.05 rad of its limit")
         p = self.hand(q)
         if p[2] < self.floor:
-            raise RuntimeError(f"target hand height {p[2]:.3f} m is below the floor {self.floor:.3f} m")
+            raise FloorError(f"target hand height {p[2]:.3f} m is below the floor {self.floor:.3f} m")
         if np.any(p < self.lo) or np.any(p > self.hi):
             raise RuntimeError(f"target hand position {np.round(p, 3).tolist()} m leaves the workspace box")
 
@@ -359,6 +366,7 @@ class Servo(threading.Thread):
         self.error = None
         self.policy_done, self.finish, self.done, self.ready = (threading.Event() for _ in range(4))
         self.holding = False
+        self.floor_hold_steps = 0
         self.put_back_allowed = not args.no_put_back
         self.commands = []
 
@@ -404,7 +412,13 @@ class Servo(threading.Thread):
                     raise RuntimeError("robot left impedance control")
                 goal = self.target(time.monotonic())
                 q = self.q_ref + np.clip(goal - self.q_ref, -step, step)
-                self.envelope.check(q)
+                try:
+                    self.envelope.check(q)
+                except FloorError:
+                    if self.args.hard_floor:
+                        raise
+                    q = self.q_ref               # soft floor: hold the last safe reference
+                    self.floor_hold_steps += 1
                 measured = np.asarray(self.robot.state.q)
                 if np.abs(goal - measured).max() > self.args.max_target_delta:
                     raise RuntimeError(f"policy target {np.abs(goal - measured).max():.3f} rad from the measured arm")
@@ -589,7 +603,7 @@ def run_trial(robot, gripper_reader, cameras, listener, policy, plan, envelope, 
                   holding=bool(servo.holding), final_width_m=float(gripper_reader.width),
                   max_lift_m=float(max((r["hand"][2] for r in records), default=np.nan) - envelope.grasp_z),
                   min_hand_z_above_grasp_m=float(min((r["hand"][2] for r in records), default=np.nan) - envelope.grasp_z),
-                  max_tracking_error_rad=servo.max_error_seen, duration_s=records[-1]["t"] if records else 0.0,
+                  max_tracking_error_rad=servo.max_error_seen, floor_hold_steps=servo.floor_hold_steps, duration_s=records[-1]["t"] if records else 0.0,
                   gripper_events=grip.events, queries=len(queries),
                   mean_latency_s=float(np.mean([q[2] for q in queries])) if queries else None,
                   policy=policy.manifest["kind"], exec_horizon=args.exec_horizon, temporal_agg=args.temporal_agg)
@@ -688,6 +702,8 @@ def add_args(p):
     p.add_argument("--max-error", type=float, default=0.10, help="abort if a joint lags its reference more (rad)")
     p.add_argument("--max-align", type=float, default=0.25, help="largest joint offset to the lifted pose the put-back accepts (rad)")
     p.add_argument("--floor-margin", type=float, default=0.015, help="m the hand may go below the saved grasp height")
+    p.add_argument("--hard-floor", action="store_true",
+                   help="abort when a target goes below the floor (default: hold the arm there and keep going)")
     p.add_argument("--box-margin", type=float, default=0.10, help="m around the HOME-to-grasp box the hand may use")
     p.add_argument("--watchdog", type=float, default=1.0, help="s past the end of a chunk before aborting")
     p.add_argument("--no-put-back", action="store_true", help="stop after the policy; leave the arm where it is")

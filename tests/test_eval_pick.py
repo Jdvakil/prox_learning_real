@@ -94,6 +94,53 @@ class SafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "below the floor"):
             self.env.check(q)
 
+    def test_soft_floor_holds_then_follows_the_policy_back_up(self):
+        import sys
+        from unittest.mock import patch
+        grasp = np.asarray(self.saved["grasp_pose"])
+        q0 = np.asarray(self.saved["grasp_q"], dtype=float)
+        # 2 s chunk: down to 3 cm below the grasp (5 mm floor margin), then back up to 2 cm above it
+        dz = np.concatenate([np.linspace(0.0, -0.03, 10), np.full(5, -0.03), np.linspace(-0.03, 0.02, 15)])
+        arm, q = [], q0
+        for z in dz:
+            q = pick.ik(pick.shifted(grasp, dz=z), q, self.env.f_t_ee)
+            arm.append(q)
+
+        class Robot:
+            state = SimpleNamespace(q=q0.copy())
+
+        robot = Robot()
+
+        class Tracker:
+            def __init__(self, robot_, **kw):
+                pass
+
+            def tick(self):
+                time.sleep(1 / ev.CONTROL_HZ)
+                return True
+
+            def set_target(self, q, dq):
+                robot.state.q = np.asarray(q).copy()   # perfect tracking
+
+            def stop(self, *a):
+                pass
+
+        args = eval_args("--floor-margin", "0.005", "--no-put-back")
+        with patch.dict(sys.modules, {"franky": SimpleNamespace(JointImpedanceTracker=Tracker)}), \
+                patch.object(pick, "HOME", q0.tolist()):
+            env = ev.Envelope(self.saved, args)
+            servo = ev.Servo(robot, None, env, None, args, None)
+            servo.publish(time.monotonic(), np.asarray(arm))
+            servo.start()
+            time.sleep(len(arm) / ev.POLICY_HZ + 0.4)
+            servo.policy_done.set()
+            servo.join(5)
+        self.assertIsNone(servo.error)
+        self.assertGreater(servo.floor_hold_steps, 0)
+        heights = [env.hand(c)[2] for _, c in servo.commands]
+        self.assertGreaterEqual(min(heights), env.floor - 1e-9)
+        self.assertGreater(heights[-1], grasp[2, 3] + 0.01)       # followed the policy back up
+
     def test_joint_limit_is_refused(self):
         q = np.asarray(pick.HOME, dtype=float)
         q[3] = -3.05

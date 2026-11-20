@@ -1,0 +1,21 @@
+{
+  "success": false,
+  "end": "aborted",
+  "error": "RuntimeError('servo stopped: policy target 0.210 rad from the measured arm')",
+  "servo_error": "RuntimeError('policy target 0.210 rad from the measured arm')",
+  "holding": false,
+  "final_width_m": 0.07999999909219975,
+  "max_lift_m": 0.3121053770328641,
+  "min_hand_z_above_grasp_m": 0.21638343594148277,
+  "max_tracking_error_rad": 0.031492653006112176,
+  "floor_hold_steps": 0,
+  "duration_s": 3.666734775993973,
+  "gripper_events": [],
+  "queries": 2,
+  "mean_latency_s": 0.3273650535265915,
+  "policy": "act",
+  "exec_horizon": 50,
+  "temporal_agg": false,
+  "sim_block_rise_m": 0.0,
+  "sim_block_put_back_offset_m": 0.0
+}

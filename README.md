@@ -490,11 +490,19 @@ same inputs.
 **Every trial starts at HOME** with the gripper open. Any of these stops the arm with the short
 damping stop and ends the batch:
 - a target within 0.05 rad of a joint limit;
-- the hand more than `--floor-margin` (15 mm) below the saved grasp height;
 - the hand outside the HOME-to-grasp box plus `--box-margin` (10 cm);
 - a policy target more than 0.15 rad from the measured arm;
 - tracking error above `--max-error` (0.10 rad);
 - no new chunk for 1 s.
+
+**Soft floor.** A target that would put the hand more than `--floor-margin` (15 mm) below the
+saved grasp height is not sent. The arm holds its last safe reference, and the policy keeps
+running. It follows again once the targets come back above the floor, for example the lift after the grasp.
+`floor_hold_steps` in result.json counts the held 100 Hz steps. `--hard-floor` restores the old abort.
+Why: on 2026-11-20 the first bin-pick PC-ACT trial (`evaluations/pick_bin_pick_pcact_20261120T221123Z`)
+went 13-15 mm below the grasp height (the demos never went below it). The arm followed with 0.004 rad
+error, so it was touching nothing. The policy closed the gripper on the block (25 mm), and the old hard
+floor then aborted before the lift. The soft floor applies to ACT and PC-ACT alike.
 
 After an abort nothing scripted moves the arm. Run `--home` once you have checked it.
 
