@@ -42,6 +42,47 @@ git submodule update --init --recursive    # franky 2.0 (build it per submodules
 pip install pyrealsense2 "imageio[ffmpeg]" h5py numpy
 ```
 
+## REAL: collecting pick data for the paper
+
+The script is `python data.py pick` (`prox_real/pick_block.py`). It records joints, gripper, all
+40 skin sensors and both cameras in the row layout the parent repo's converter reads.
+
+```bash
+git pull && git lfs pull
+
+# 1. Sensors and cameras, nothing moves (expect 36+ of 40 sensors live)
+python data.py live --wrist-serial 836612071883 --exo-serial 943222071556
+
+# 2. Grasp pose, only if the block spot changed (Desk guiding mode, fingers around the block, FCI on)
+python data.py pick --set-pose
+
+# 3. Check the plan without hardware
+python data.py pick --plan-only
+
+# 4. Collect; a NEW --seed for every batch
+python data.py pick --episodes 10 --seed 101 --wrist-serial 836612071883 --exo-serial 943222071556
+python data.py pick --episodes 10 --seed 102 --wrist-serial 836612071883 --exo-serial 943222071556
+#  -> recordings/pick_<utc stamp>/episode_NNNN/
+```
+
+Lessons from the 2026-11-12 batches:
+- Give every batch its own `--seed`. All five 2026-11-12 batches used seed 0, so the 46 clean
+  rows hold only 20 distinct noise draws.
+- Check the block every ~10 episodes and put it back on its spot. `014342Z/0014` missed the grasp
+  after the block drifted over 14 put-backs.
+- Check the live sensor count before each batch. `link5_front_sensor_0..3` were silent.
+- Do not move the cameras. On 2026-11-12 both views matched the training data (exo within
+  1.5 px and 0.7 deg at 320x240).
+- Optional: set the end-effector load (hand + skin + camera) in Desk. That removes the 2-3 mm
+  grasp offset from joint 2 sag.
+
+Then, on the desktop, convert and train as in
+[ACT and PC-ACT on converted pick data](#act-and-pc-act-on-converted-pick-data) (sim recipe,
+`scripts/exp/train_real_pick.sh`; register a new task name in `submodules/act/constants.py` for a
+new dataset). The pick has no obstacles, so the skin barely changes PC-ACT's actions (skin
+ablation: 0.003 rad). A result where the skin matters needs a task with an obstacle or hazard off
+camera.
+
 ## Lab PC: block pick evaluation (models/pick_act, models/pick_pcact)
 
 Use `model.py eval pick`. The old A -> B evaluators (`eval act`, `eval pc-act`, models
