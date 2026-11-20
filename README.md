@@ -98,7 +98,18 @@ python model.py eval pick --model models/pick_pcact --check-model --device cpu
 python model.py eval pick --model models/pick_act   --trials 1 --device cpu --wrist-serial 836612071883 --exo-serial 943222071556
 python model.py eval pick --model models/pick_pcact --trials 1 --device cpu --wrist-serial 836612071883 --exo-serial 943222071556
 python model.py eval pick --home     # after any abort
+
+# 2026-11-20 bin pick (block inside the fabric bin, same pick_pose.json): models/bin_pick_act, models/bin_pick_pcact
+python model.py eval pick --model models/bin_pick_act   --check-model --device cpu
+python model.py eval pick --model models/bin_pick_pcact --check-model --device cpu
+python model.py eval pick --model models/bin_pick_act   --trials 1 --device cpu --wrist-serial 836612071883 --exo-serial 943222071556
+python model.py eval pick --model models/bin_pick_pcact --trials 1 --device cpu --wrist-serial 836612071883 --exo-serial 943222071556
 ```
+
+The bin-pick bundles come from `real_pick_20261120` (best val loss ACT 0.093 at epoch 1628, PC-ACT
+0.079 at epoch 1835). Open loop on batch `195628Z` (mostly training rows, so a fit check only): ACT
+chunk MAE 0.014 rad, PC-ACT 0.018 rad, gripper close within 1-5 ticks of the demo on all 10 rows.
+`--sim` has no bin in the MuJoCo twin, so it does not test this task.
 
 Details, safety stops and results: [Evaluate the pick policies on the arm](#evaluate-the-pick-policies-on-the-arm-gripper-included).
 
@@ -374,7 +385,15 @@ experiments do (task `real_pick_20261112` in `submodules/act/constants.py`):
 cd /home/jaydv/code/prox_learning          # mlspaces env
 EPOCHS=2000 EXP=ACT          ./scripts/exp/train_real_pick.sh   # -> submodules/act/ckpts/real_pick_20261112/<run>/
 EPOCHS=2000 EXP=PACT_READOUT ./scripts/exp/train_real_pick.sh
+
+# 2026-11-20 bin pick (30 rows, block inside a fabric bin): same recipe, task real_pick_20261120
+TASK=real_pick_20261120 EPOCHS=2000 EXP=ACT          ./scripts/exp/train_real_pick.sh
+TASK=real_pick_20261120 EPOCHS=2000 EXP=PACT_READOUT ./scripts/exp/train_real_pick.sh
 ```
+
+`TASK` defaults to `real_pick_20261112`. The bin-pick rows are staged in
+`act_style_data/real_pick_20261120/rows` (batch `193958Z` left out: it reused seed 101, so its one
+row repeats `194116Z/0000`) and converted like the table pick below.
 
 That recipe uses batch 8, chunk 50, lr 1e-5 and KL weight 10. An epoch samples one random frame
 per training episode, and the split is a random 80/20 by episode. PC-ACT fine-tunes the pretrained
@@ -426,6 +445,12 @@ python model.py export pick --source $C/real_pick_20261112_ACT_s0_bs8_cs50_lr1e-
   --destination models/pick_act --data-dir $D
 python model.py export pick --source $C/real_pick_20261112_PACT_READOUT_s0_bs8_cs50_lr1e-5_e2000 \
   --destination models/pick_pcact --data-dir $D
+# 2026-11-20 bin pick
+C=../act/ckpts/real_pick_20261120; D=../../act_style_data/real_pick_20261120/act
+python model.py export pick --source $C/real_pick_20261120_ACT_s0_bs8_cs50_lr1e-5_e2000 \
+  --destination models/bin_pick_act --data-dir $D
+python model.py export pick --source $C/real_pick_20261120_PACT_READOUT_s0_bs8_cs50_lr1e-5_e2000 \
+  --destination models/bin_pick_pcact --data-dir $D
 
 # Lab PC, no hardware: load check, open-loop check on recorded rows, closed loop in MuJoCo
 python model.py eval pick --model models/pick_act --check-model

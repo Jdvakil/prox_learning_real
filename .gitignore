@@ -8,3 +8,4 @@ viz/
 eval_rollouts/
 dist/
 training_runs/
+recordings/

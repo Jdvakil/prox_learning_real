@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MODELS = {"act_test_20": ["policy_best.ckpt", "dataset_stats.npz", "training_config.json", "image_metadata.json"],
           "pc_act_test_20": ["policy_best.ckpt", "prox_encoder_best.pt", "policy_pair.json", "guard_baseline.npz"],
           "pick_act": ["policy_best.ckpt", "dataset_stats.npz", "pick_policy.json"],
-          "pick_pcact": ["policy_best.ckpt", "prox_encoder_best.pt", "prox_config.json", "dataset_stats.npz", "pick_policy.json"]}
+          "pick_pcact": ["policy_best.ckpt", "prox_encoder_best.pt", "prox_config.json", "dataset_stats.npz", "pick_policy.json"],
+          "bin_pick_act": ["policy_best.ckpt", "dataset_stats.npz", "pick_policy.json"],
+          "bin_pick_pcact": ["policy_best.ckpt", "prox_encoder_best.pt", "prox_config.json", "dataset_stats.npz", "pick_policy.json"]}
 
 
 def check(argv=None):
